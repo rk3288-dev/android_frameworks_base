@@ -77,6 +77,7 @@ import android.view.InputChannel;
 import android.view.InputDevice;
 import android.view.InputEvent;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.PointerIcon;
 import android.view.Surface;
 import android.view.ViewConfiguration;
@@ -178,6 +179,9 @@ public class InputManagerService extends IInputManager.Stub
             int injectorPid, int injectorUid, int syncMode, int timeoutMillis,
             int policyFlags);
     private static native void nativeSetInputWindows(long ptr, InputWindowHandle[] windowHandles);
+	private static native void nativeSetDontFocusedHome(long ptr, boolean dontNeedFocusHome);
+	private static native void nativeSetMultiWindowConfig(long ptr, boolean enable);
+	private static native void nativeSetDualScreenConfig(long ptr, boolean enable);
     private static native void nativeSetInputDispatchMode(long ptr, boolean enabled, boolean frozen);
     private static native void nativeSetSystemUiVisibility(long ptr, int visibility);
     private static native void nativeSetFocusedApplication(long ptr,
@@ -195,6 +199,8 @@ public class InputManagerService extends IInputManager.Stub
     private static native void nativeReloadDeviceAliases(long ptr);
     private static native String nativeDump(long ptr);
     private static native void nativeMonitor(long ptr);
+    private static native void nativedispatchMouse(float x, float y, int w, int h, long ptr);
+    private static native void nativedispatchMouseByCd(float x, float y, long ptr);
 
     // Input event injection constants defined in InputDispatcher.h.
     private static final int INPUT_EVENT_INJECTION_SUCCEEDED = 0;
@@ -374,6 +380,17 @@ public class InputManagerService extends IInputManager.Stub
                 viewport.physicalFrame.right, viewport.physicalFrame.bottom,
                 viewport.deviceWidth, viewport.deviceHeight);
     }
+
+    /*$_rbox_$_modify_$_zhangwen_20140219: this function just for call the function in JNI*/
+    //$_rbox_$_modify_$_begin
+    public void dispatchMouse(float x, float y, int w, int h){
+	    nativedispatchMouse(x, y, w, h, mPtr);
+    }
+
+    public void dispatchMouseByCd(float x, float y){
+	    nativedispatchMouseByCd(x, y, mPtr);
+    }
+    //$_rbox_$_modify_$_end
 
     /**
      * Gets the current state of a key or button by key code.
@@ -717,6 +734,9 @@ public class InputManagerService extends IInputManager.Stub
             }
             if (missingLayoutForExternalKeyboard) {
                 if (missingLayoutForExternalKeyboardAdded) {
+				//	Log.d("hjc","========ExternalKeyboard====true");
+					Settings.System.putInt(mContext.getContentResolver(),
+                                                        Settings.System.EXTER_KEYBOARD_CONFIG, 1);
                     if (multipleMissingLayoutsForExternalKeyboardsAdded) {
                         // We have more than one keyboard missing a layout, so drop the
                         // user at the generic input methods page so they can pick which
@@ -727,6 +747,9 @@ public class InputManagerService extends IInputManager.Stub
                     }
                 }
             } else if (mKeyboardLayoutNotificationShown) {
+           // Log.d("hjc","========ExternalKeyboard====false");
+			Settings.System.putInt(mContext.getContentResolver(),
+                                                        Settings.System.EXTER_KEYBOARD_CONFIG, 0);
                 hideMissingKeyboardLayoutNotification();
             }
         }
@@ -1173,6 +1196,17 @@ public class InputManagerService extends IInputManager.Stub
         nativeSetInputWindows(mPtr, windowHandles);
     }
 
+	public void setDontFocusedHome(boolean dontNeedFocusHome){
+		nativeSetDontFocusedHome(mPtr,dontNeedFocusHome);
+	}
+	public void setMultiWindowConfig(boolean enable){
+		nativeSetMultiWindowConfig(mPtr, enable);
+	}
+	
+	public void setDualScreenConfig(boolean enable){
+		nativeSetDualScreenConfig(mPtr, enable);
+	}
+
     public void setFocusedApplication(InputApplicationHandle application) {
         nativeSetFocusedApplication(mPtr, application);
     }
@@ -1465,7 +1499,11 @@ public class InputManagerService extends IInputManager.Stub
             KeyEvent event, int policyFlags) {
         return mWindowManagerCallbacks.interceptKeyBeforeDispatching(focus, event, policyFlags);
     }
-
+	//Native callback
+	private long interceptMotionBeforeDispatching(InputWindowHandle focus,
+			MotionEvent event, int policyFlags){
+		return mWindowManagerCallbacks.interceptMotionBeforeDispatching(focus, event, policyFlags);
+	}
     // Native callback.
     private KeyEvent dispatchUnhandledKey(InputWindowHandle focus,
             KeyEvent event, int policyFlags) {
@@ -1623,7 +1661,8 @@ public class InputManagerService extends IInputManager.Stub
 
         public long interceptKeyBeforeDispatching(InputWindowHandle focus,
                 KeyEvent event, int policyFlags);
-
+		public long interceptMotionBeforeDispatching(InputWindowHandle focus,
+				MotionEvent event, int policyFlags);
         public KeyEvent dispatchUnhandledKey(InputWindowHandle focus,
                 KeyEvent event, int policyFlags);
 

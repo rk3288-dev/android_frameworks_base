@@ -862,7 +862,7 @@ public final class DisplayManagerService extends SystemService {
                     + device.getDisplayDeviceInfoLocked());
             return;
         }
-        display.configureDisplayInTransactionLocked(device, info.state == Display.STATE_OFF);
+        display.configureDisplayInTransactionLocked(device, info.state == Display.STATE_OFF, mLogicalDisplays.get(Display.DEFAULT_DISPLAY).mInfo);
 
         // Update the viewports if needed.
         if (!mDefaultViewport.valid
@@ -1238,6 +1238,13 @@ public final class DisplayManagerService extends SystemService {
                 Binder.restoreCallingIdentity(token);
             }
         }
+
+	public boolean isWfdConnect() {
+       if (mWifiDisplayAdapter != null) {
+           return mWifiDisplayAdapter.isWfdConnect();
+       }
+       return false;
+    }
 
         @Override // Binder call
         public void pauseWifiDisplay() {

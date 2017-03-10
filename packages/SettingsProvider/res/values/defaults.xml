@@ -17,6 +17,22 @@
  */
 -->
 <resources>
+    <!-- should show the screenshot button default -->
+    <bool name="def_screenshot_button_show">true</bool>
+
+    <bool name="def_multi_window_button_show">false</bool>
+    <bool name="def_multi_window_used">false</bool>
+    <bool name="def_multi_window_config">false</bool>
+    <integer name="def_multi_window_mode">0</integer>
+    <bool name="def_half_screen_window_enable">false</bool>
+    <bool name="def_four_screen_window_enable">false</bool>
+    <string name="def_half_screen_window_position">0,0</string>
+	<string name="def_four_screen_window_position">0,0</string>
+    <integer name="def_half_screen_app_location">0</integer>
+    <bool name="def_systembar_hide">false</bool>
+    <!-- the store location of screen capture by default-->
+
+    <string name="def_screenshot_location">/mnt/sdcard</string>
     <bool name="def_dim_screen">true</bool>
     <integer name="def_screen_off_timeout">60000</integer>
     <integer name="def_sleep_timeout">-1</integer>
@@ -26,7 +42,7 @@
     <string name="def_airplane_mode_radios" translatable="false">cell,bluetooth,wifi,nfc,wimax</string>
     <string name="airplane_mode_toggleable_radios" translatable="false">bluetooth,wifi,nfc</string>
     <bool name="def_auto_time">true</bool>
-    <bool name="def_auto_time_zone">true</bool>
+    <bool name="def_auto_time_zone">false</bool>
     <bool name="def_accelerometer_rotation">true</bool>
     <!-- Default screen brightness, from 0 to 255.  102 is 40%. -->
     <integer name="def_screen_brightness">102</integer>
@@ -44,6 +60,7 @@
          user opt-in via Setup Wizard or Settings.
     -->
     <string name="def_location_providers_allowed" translatable="false">gps</string>
+    <string name="def_location_providers_allowed_network" translatable="false">network</string>
     <bool name="assisted_gps_enabled">true</bool>
     <bool name="def_netstats_enabled">true</bool>
     <bool name="def_usb_mass_storage_enabled">true</bool>
@@ -207,4 +224,16 @@
     <!-- Default for Settings.Global.GUEST_USER_ENABLED -->
     <bool name="def_guest_user_enabled">true</bool>
 
+    <!--Default for HDMI_LCD_TIMEOUT-->
+        <integer name="def_hdmi_lcd_timeout">-1</integer>
+
+    <string name="def_ntp_server" translatable="false">
+        time.windows.com
+    </string>
+
+    <!-- Default for Settings.System.BUTTON_LIGHTS_ENABLED -->
+    <bool name="def_button_lights_enabled">true</bool>
+
+    <!--Default for Settings.System.BUTTON_LIGHTS_OFF_TIMEOUT-->
+    <integer name="def_button_lights_off_timeout">1500</integer>
 </resources>

@@ -2292,9 +2292,19 @@ public class WebView extends AbsoluteLayout
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+            //$_rockchip_$_modify_by_huangjc:support double click for showContextMenu 
+            if(MotionEvent.ACTION_UP == event.getActionMasked()){
+                firClick = secClick;
+                secClick = (int)System.currentTimeMillis();
+		if (firClick!=0 && (secClick - firClick < 300)) {
+                     performLongClick();
+                     return true;
+                }
+             }
         return mProvider.getViewDelegate().onTouchEvent(event);
     }
-
+        private int firClick = 0;
+        private int secClick = 0;
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
         return mProvider.getViewDelegate().onGenericMotionEvent(event);
@@ -2305,8 +2315,31 @@ public class WebView extends AbsoluteLayout
         return mProvider.getViewDelegate().onTrackballEvent(event);
     }
 
+    /*$_rbox_$_modify_$_huangjc: handle zoom in/out keyevent*/
+    //$_rbox_$_modify_$_begin
+    private boolean keyProcess(int keyCode) 
+    {
+        if(keyCode == KeyEvent.KEYCODE_ZOOM_IN)// zoomIn
+        {
+               zoomIn();
+               return true;
+        }
+        else if(keyCode == KeyEvent.KEYCODE_ZOOM_OUT) //zoomOut
+        {
+               zoomOut();
+               return true;
+        }              
+        return false;
+    }
+     //$_rbox_$_modify_$_end
+
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        /*$_rbox_$_modify_$_huangjc: handle zoom in/out keyevent*/
+        //$_rbox_$_modify_$_begin
+        if(keyProcess(keyCode))
+               return true;
+        //$_rbox_$_modify_$_end
         return mProvider.getViewDelegate().onKeyDown(keyCode, event);
     }
 

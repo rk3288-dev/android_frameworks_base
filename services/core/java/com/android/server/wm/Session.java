@@ -27,7 +27,9 @@ import android.content.ClipData;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Region;
+import android.graphics.Point;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -45,8 +47,16 @@ import android.view.Surface;
 import android.view.SurfaceControl;
 import android.view.SurfaceSession;
 import android.view.WindowManager;
-
+import android.view.DisplayInfo;
+import android.util.Log;
+import android.view.MultiWindowInfo;
 import java.io.PrintWriter;
+import android.view.IAppAlignWatcher;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+import java.io.BufferedReader;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 
 /**
  * This class represents an active client session.  There is generally one
@@ -203,6 +213,10 @@ final class Session extends IWindowSession.Stub
         return res;
     }
 
+	public void setOnlyShowInExtendDisplay(IWindow window,int transit){
+		mService.setOnlyShowInExtendDisplay(this, window,transit);
+    }	
+
     public void performDeferredDestroy(IWindow window) {
         mService.performDeferredDestroyWindow(this, window);
     }
@@ -225,6 +239,55 @@ final class Session extends IWindowSession.Stub
         mService.getWindowDisplayFrame(this, window, outDisplayFrame);
     }
 
+	public void getSurfaceFrame(IWindow window, Rect outSurfaceFrame){
+		mService.getWindowSurfaceFrame(this, window, outSurfaceFrame);
+	}
+	public void getTransFormInfo(IWindow window, MultiWindowInfo transFormInfo){
+		mService.getWindowTransFormInfo(this, window, transFormInfo);
+	}
+	public int getOrientationFormInfo(IWindow window){
+		return mService.getWindowOrientationFormInfo(this, window);
+	}
+
+	public void setTransFormInfo(IWindow window, MultiWindowInfo transForInfo){
+		mService.setWindowTransFormInfo(this, window , transForInfo);
+	}
+
+	public boolean isMultiWindowMode(){
+		return mService.isMultiWindowMode();
+	}
+	public boolean isHomeWindow(IWindow window){
+		return mService.isSessionHomeWindow(this, window );
+	}
+
+	public void setHalfScreenTransFormInfo(IWindow window, int posX,int posY){
+		mService.setHalfScreenWindowTransFormInfo(this, window , posX,posY);
+	}
+
+	public int getAppTokenGroupId(IWindow window){
+		return mService.getWindowAppTokenGroupId(this,window);
+	}
+
+	public boolean isSameTaskWithHome(IWindow window){
+		return mService.isWindowSameTaskWithHome(this, window);
+	}
+	public void registerAppAlignWatcher(IWindow window, IAppAlignWatcher watcher){
+		mService.registerWindowAppAlignWatcher(this, window, watcher);
+	}
+	public void unregisterAppAlignWatcher(IWindow window){
+		mService.unregisterAppAlignWatcher(this,window);
+	}
+
+	public void notifyAppAlignChanged(IWindow window, int align){
+		mService.notifyAppAlignChanged(this,window,align);
+	}
+
+	public void updateHalfScreenWindow(IWindow window, int align){
+		mService.updateHalfScreenWindow(this,window,align);
+	}
+    public int multiWindowMenuOperation(IWindow window, int opertion){
+        return mService.multiWindowMenuOperation(this,window,opertion);
+    }
     public void finishDrawing(IWindow window) {
         if (WindowManagerService.localLOGV) Slog.v(
             WindowManagerService.TAG, "IWindow finishDrawing called for " + window);
@@ -526,4 +589,67 @@ final class Session extends IWindowSession.Stub
     public String toString() {
         return mStringName;
     }
+
+    public void hideWindowLayer(IWindow window, boolean flag){
+	long origId = Binder.clearCallingIdentity();
+	synchronized(mService.mWindowMap) {
+	    WindowState win = mService.windowForClientLocked(this, window, false);
+	    if (win == null) {
+		return;
+	    }
+
+	    SurfaceControl.openTransaction();
+	    if(win.mWinAnimator.mSurfaceControl != null){
+			Slog.w(WindowManagerService.TAG,flag+ "hideWindowLayer mWin=" + win,
+                new RuntimeException("here").fillInStackTrace());
+		if (flag){
+		    win.mWinAnimator.mSurfaceShown = false;
+		    win.mWinAnimator.mSurfaceControl.hide();
+		    win.mWinAnimator.mLastHidden = false;
+		    win.mWinAnimator.mSurfaceHidden = true;
+		} else {
+		    win.mWinAnimator.mSurfaceShown = true;
+		    win.mWinAnimator.mSurfaceControl.show();
+		    win.mWinAnimator.mSurfaceHidden = false;
+		}
+	    }
+
+	    SurfaceControl.closeTransaction();
+	}
+
+	Binder.restoreCallingIdentity(origId);
+    }
+
+    public void updatePositionAndSize(IWindow window,int x,int y,int width,int height){
+	long origId = Binder.clearCallingIdentity();
+        synchronized(mService.mWindowMap) {
+	    WindowState win = mService.windowForClientLocked(this, window, false);
+            if (win == null) {
+		return;
+            }
+
+	    win.mWinAnimator.mLastHidden = true;
+	    if(win.mAttachedWindow != null){
+		win.mAttachedWindow.mWinAnimator.mLastHidden = true;
+	    }
+
+	    SurfaceControl.openTransaction();
+	    if(win.mWinAnimator.mSurfaceControl != null){
+		win.mWinAnimator.mSurfaceControl.setPosition(x,y);
+		win.mWinAnimator.mSurfaceControl.setSize(width,height);
+		win.mWinAnimator.mSurfaceControl.setWindowCrop(new Rect(0,0,width,height));
+		win.mRequestedWidth = width;
+		win.mRequestedHeight = height;
+	    }
+			if(win.mSurfaceViewBackWindow != null){
+				win.mSurfaceViewBackWindow.destroy();
+				win.mSurfaceViewBackWindow = null;
+			}
+	    SurfaceControl.closeTransaction();
+	}
+
+	Binder.restoreCallingIdentity(origId);
+    }
+
+
 }

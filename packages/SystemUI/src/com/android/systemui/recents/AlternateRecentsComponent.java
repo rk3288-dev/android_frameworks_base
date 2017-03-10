@@ -36,6 +36,7 @@ import android.graphics.Rect;
 import android.os.Handler;
 import android.os.SystemClock;
 import android.os.UserHandle;
+import android.provider.Settings;
 import android.util.Pair;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -56,6 +57,7 @@ import com.android.systemui.recents.views.TaskViewTransform;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import android.util.Log;
 
 /**
  * Annotation for a method that is only called from the primary user's SystemUI process and will be
@@ -88,6 +90,8 @@ public class AlternateRecentsComponent implements ActivityOptions.OnAnimationSta
     final static String sToggleRecentsAction = "com.android.systemui.recents.SHOW_RECENTS";
     public final static String sRecentsPackage = "com.android.systemui";
     public final static String sRecentsActivity = "com.android.systemui.recents.RecentsActivity";
+    public final static String sRecentsPackageWin = "com.android.winstart";
+    public final static String sRecentsActivityWin = "com.android.winstart.RecentsActivityWin";
 
     /**
      * An implementation of ITaskStackListener, that allows us to listen for changes to the system
@@ -206,7 +210,9 @@ public class AlternateRecentsComponent implements ActivityOptions.OnAnimationSta
     /** Creates a new broadcast intent */
     static Intent createLocalBroadcastIntent(Context context, String action) {
         Intent intent = new Intent(action);
-        intent.setPackage(context.getPackageName());
+        //Add by huang for win recents
+        if(!context.getResources().getConfiguration().enableMultiWindow())
+           intent.setPackage(context.getPackageName());
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT |
                 Intent.FLAG_RECEIVER_FOREGROUND);
         return intent;
@@ -239,6 +245,12 @@ public class AlternateRecentsComponent implements ActivityOptions.OnAnimationSta
     /** Shows the Recents. */
     @ProxyFromPrimaryToCurrentUser
     public void onShowRecents(boolean triggeredFromAltTab) {
+        // Ensure the device has been provisioned before allowing the user to interact with
+        // recents
+        if (!isDeviceProvisioned()) {
+            return;
+        }
+
         if (mSystemServicesProxy.isForegroundUserOwner()) {
             showRecents(triggeredFromAltTab);
         } else {
@@ -261,7 +273,15 @@ public class AlternateRecentsComponent implements ActivityOptions.OnAnimationSta
     /** Hides the Recents. */
     @ProxyFromPrimaryToCurrentUser
     public void onHideRecents(boolean triggeredFromAltTab, boolean triggeredFromHomeKey) {
-        if (mSystemServicesProxy.isForegroundUserOwner()) {
+         // Ensure the device has been provisioned before allowing the user to interact with
+        // recents
+        if (!isDeviceProvisioned()) {
+            return;
+        }
+
+       
+    	//Add by huang for win recents
+        if (mContext.getResources().getConfiguration().enableMultiWindow()||mSystemServicesProxy.isForegroundUserOwner()) {
             hideRecents(triggeredFromAltTab, triggeredFromHomeKey);
         } else {
             Intent intent = createLocalBroadcastIntent(mContext,
@@ -274,7 +294,8 @@ public class AlternateRecentsComponent implements ActivityOptions.OnAnimationSta
     void hideRecents(boolean triggeredFromAltTab, boolean triggeredFromHomeKey) {
         if (mBootCompleted) {
             ActivityManager.RunningTaskInfo topTask = mSystemServicesProxy.getTopMostTask();
-            if (topTask != null && mSystemServicesProxy.isRecentsTopMost(topTask, null)) {
+            //Add by huang for win recents
+            if (mContext.getResources().getConfiguration().enableMultiWindow()||(topTask != null && mSystemServicesProxy.isRecentsTopMost(topTask, null))) {
                 // Notify recents to hide itself
                 Intent intent = createLocalBroadcastIntent(mContext, ACTION_HIDE_RECENTS_ACTIVITY);
                 intent.putExtra(EXTRA_TRIGGERED_FROM_ALT_TAB, triggeredFromAltTab);
@@ -287,6 +308,12 @@ public class AlternateRecentsComponent implements ActivityOptions.OnAnimationSta
     /** Toggles the Recents activity. */
     @ProxyFromPrimaryToCurrentUser
     public void onToggleRecents() {
+        // Ensure the device has been provisioned before allowing the user to interact with
+        // recents
+        if (!isDeviceProvisioned()) {
+            return;
+        }
+
         if (mSystemServicesProxy.isForegroundUserOwner()) {
             toggleRecents();
         } else {
@@ -308,6 +335,12 @@ public class AlternateRecentsComponent implements ActivityOptions.OnAnimationSta
     /** Preloads info for the Recents activity. */
     @ProxyFromPrimaryToCurrentUser
     public void onPreloadRecents() {
+        // Ensure the device has been provisioned before allowing the user to interact with
+        // recents
+        if (!isDeviceProvisioned()) {
+            return;
+        }
+
         if (mSystemServicesProxy.isForegroundUserOwner()) {
             preloadRecents();
         } else {
@@ -400,10 +433,22 @@ public class AlternateRecentsComponent implements ActivityOptions.OnAnimationSta
     }
 
     public void onShowNextAffiliatedTask() {
+        // Ensure the device has been provisioned before allowing the user to interact with
+        // recents
+        if (!isDeviceProvisioned()) {
+            return;
+        }
+
         showRelativeAffiliatedTask(true);
     }
 
     public void onShowPrevAffiliatedTask() {
+        // Ensure the device has been provisioned before allowing the user to interact with
+        // recents
+        if (!isDeviceProvisioned()) {
+            return;
+        }
+
         showRelativeAffiliatedTask(false);
     }
 
@@ -702,10 +747,18 @@ public class AlternateRecentsComponent implements ActivityOptions.OnAnimationSta
         mConfig.launchedHasConfigurationChanged = false;
 
         Intent intent = new Intent(sToggleRecentsAction);
-        intent.setClassName(sRecentsPackage, sRecentsActivity);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
-                | Intent.FLAG_ACTIVITY_TASK_ON_HOME);
+        //Add by huang for win recents
+        if(mContext.getResources().getConfiguration().enableMultiWindow()){
+          intent.setClassName(sRecentsPackageWin, sRecentsActivityWin);
+          intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                /*| Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+                | Intent.FLAG_ACTIVITY_TASK_ON_HOME*/);
+        }else{
+          intent.setClassName(sRecentsPackage, sRecentsActivity);
+	        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+	                | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+	                | Intent.FLAG_ACTIVITY_TASK_ON_HOME);
+        }
         if (opts != null) {
             mContext.startActivityAsUser(intent, opts.toBundle(), UserHandle.CURRENT);
         } else {
@@ -745,6 +798,14 @@ public class AlternateRecentsComponent implements ActivityOptions.OnAnimationSta
         RecentsTaskLoadPlan plan = sInstanceLoadPlan;
         sInstanceLoadPlan = null;
         return plan;
+    }
+
+    /**
+     * @return whether this device is provisioned.
+     */
+    private boolean isDeviceProvisioned() {
+        return Settings.Global.getInt(mContext.getContentResolver(),
+                Settings.Global.DEVICE_PROVISIONED, 0) != 0;
     }
 
     /**** OnAnimationStartedListener Implementation ****/

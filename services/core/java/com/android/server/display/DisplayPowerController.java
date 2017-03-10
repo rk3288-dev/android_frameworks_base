@@ -24,6 +24,7 @@ import com.android.server.lights.LightsManager;
 import android.animation.Animator;
 import android.animation.ObjectAnimator;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -46,6 +47,9 @@ import android.view.Display;
 import android.view.WindowManagerPolicy;
 
 import java.io.PrintWriter;
+//------modify begin for button & keyboard backlight by cx@rock-chips.com------
+import com.android.server.lights.Light;
+//------modify end------
 
 /**
  * Controls the power state of the display.
@@ -92,6 +96,9 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
     private static final int MSG_UPDATE_POWER_STATE = 1;
     private static final int MSG_PROXIMITY_SENSOR_DEBOUNCED = 2;
     private static final int MSG_SCREEN_ON_UNBLOCKED = 3;
+    //------modify begin for button & keyboard backlight by cx@rock-chips.com------
+    private static final int MSG_BUTTON_LIGHTS_TIME_OUT = 4;
+    //------modify end------
 
     private static final int PROXIMITY_UNKNOWN = -1;
     private static final int PROXIMITY_NEGATIVE = 0;
@@ -99,7 +106,7 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
 
     // Proximity sensor debounce delay in milliseconds for positive or negative transitions.
     private static final int PROXIMITY_SENSOR_POSITIVE_DEBOUNCE_DELAY = 0;
-    private static final int PROXIMITY_SENSOR_NEGATIVE_DEBOUNCE_DELAY = 250;
+    private static final int PROXIMITY_SENSOR_NEGATIVE_DEBOUNCE_DELAY = 200;
 
     // Trigger proximity if distance is less than 5 cm.
     private static final float TYPICAL_PROXIMITY_THRESHOLD = 5.0f;
@@ -250,6 +257,11 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
     private ObjectAnimator mColorFadeOffAnimator;
     private RampAnimator<DisplayPowerState> mScreenBrightnessRampAnimator;
 
+    //------modify begin for button & keyboard backlight by cx@rock-chips.com------
+    private Light mButtonLight;
+    private Light mKeyboardLight;
+    private boolean mButtonLightOff;
+    //------modify end------
     /**
      * Creates the display power controller.
      */
@@ -296,12 +308,16 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
 
         mScreenBrightnessRangeMaximum = PowerManager.BRIGHTNESS_ON;
 
-        mUseSoftwareAutoBrightnessConfig = resources.getBoolean(
-                com.android.internal.R.bool.config_automatic_brightness_available);
-
-        mAllowAutoBrightnessWhileDozingConfig = resources.getBoolean(
-                com.android.internal.R.bool.config_allowAutoBrightnessWhileDozing);
-
+        PackageManager packageManager = context.getPackageManager();
+        if (packageManager.hasSystemFeature(PackageManager.FEATURE_SENSOR_LIGHT)) {
+                mUseSoftwareAutoBrightnessConfig = resources.getBoolean(
+                        com.android.internal.R.bool.config_automatic_brightness_available);
+                mAllowAutoBrightnessWhileDozingConfig = resources.getBoolean(
+                        com.android.internal.R.bool.config_allowAutoBrightnessWhileDozing);
+        } else {
+                mUseSoftwareAutoBrightnessConfig = false;
+                mAllowAutoBrightnessWhileDozingConfig = false;
+        }
         if (mUseSoftwareAutoBrightnessConfig) {
             int[] lux = resources.getIntArray(
                     com.android.internal.R.array.config_autoBrightnessLevels);
@@ -456,6 +472,11 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
         } catch (RemoteException ex) {
             // same process
         }
+
+        //------modify begin for button & keyboard backlight by cx@rock-chips.com------
+        mButtonLight = mLights.getLight(LightsManager.LIGHT_ID_BUTTONS);
+        mKeyboardLight = mLights.getLight(LightsManager.LIGHT_ID_KEYBOARD);
+        //------modify end------
     }
 
     private final Animator.AnimatorListener mAnimatorListener = new Animator.AnimatorListener() {
@@ -766,6 +787,13 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
             if (wasOn && !isOn) {
                 unblockScreenOn();
                 mWindowManagerPolicy.screenTurnedOff();
+                //------modify begin for button & keyboard backlight by cx@rock-chips.com------
+                Slog.d(TAG,"screen off, so turn off btn && keyboard lights");
+                mHandler.removeMessages(MSG_BUTTON_LIGHTS_TIME_OUT);
+                mButtonLight.setBrightness(0);
+                mKeyboardLight.setBrightness(0);
+                mButtonLightOff = true;
+                //------modify end------
             } else if (!wasOn && isOn) {
                 if (mPowerState.getColorFadeLevel() == 0.0f) {
                     blockScreenOn();
@@ -794,6 +822,44 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
                 // same process
             }
         }
+        //------modify begin for button & keyboard backlight by cx@rock-chips.com------
+        //Slog.d(TAG,"PowerRequest = " + mPowerRequest.toString());
+        if (mPowerRequest.useButtonLights) {
+            if (!mButtonLightOff) {
+                mButtonLight.setBrightness(target);
+                mKeyboardLight.setBrightness(target);
+            }
+            if (mPowerRequest.buttonLightsOn) {
+                Slog.d(TAG,"button lights toggle");
+                if (mPowerRequest.buttonLightsTmpBrightness >= 0) {
+                    mButtonLight.setBrightness(mPowerRequest.buttonLightsTmpBrightness);
+                    mKeyboardLight.setBrightness(mPowerRequest.buttonLightsTmpBrightness);
+                } else {
+                    mButtonLight.setBrightness(target);
+                    mKeyboardLight.setBrightness(target);
+                }
+                mButtonLightOff = false;
+            }
+            if (mPowerRequest.buttonLightsOffTimeout > 0
+                && !mButtonLightOff) {
+                Slog.d(TAG,"send timeout msg after " + mPowerRequest.buttonLightsOffTimeout);
+                mHandler.removeMessages(MSG_BUTTON_LIGHTS_TIME_OUT);
+                Message msg = mHandler.obtainMessage(MSG_BUTTON_LIGHTS_TIME_OUT);
+                msg.setAsynchronous(true);
+                mHandler.sendMessageDelayed(msg, mPowerRequest.buttonLightsOffTimeout);
+            } else if (mPowerRequest.buttonLightsOffTimeout < 0) {
+                Slog.d(TAG,"button lights never timeout");
+                mButtonLight.setBrightness(target);
+                mKeyboardLight.setBrightness(target);
+                mButtonLightOff = false;
+            }
+        } else {
+            Slog.d(TAG,"turn off button lights");
+            mButtonLight.setBrightness(0);
+            mKeyboardLight.setBrightness(0);
+            mButtonLightOff = true;
+        }
+        //------modify end------
     }
 
     private void animateScreenStateChange(int target, boolean performScreenOffTransition) {
@@ -1170,6 +1236,14 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
                         updatePowerState();
                     }
                     break;
+                //------modify begin for button & keyboard backlight by cx@rock-chips.com------
+                case MSG_BUTTON_LIGHTS_TIME_OUT:
+                    Slog.d(TAG,"MSG_BUTTON_LIGHTS_TIME_OUT");
+                    mButtonLight.setBrightness(0);
+                    mKeyboardLight.setBrightness(0);
+                    mButtonLightOff = true;
+                    break;
+                //------modify end------
             }
         }
     }

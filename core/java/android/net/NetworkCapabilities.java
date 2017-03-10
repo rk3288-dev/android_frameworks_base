@@ -37,6 +37,7 @@ public final class NetworkCapabilities implements Parcelable {
      * @hide
      */
     public NetworkCapabilities() {
+        mNetworkCapabilities = DEFAULT_CAPABILITIES;
     }
 
     public NetworkCapabilities(NetworkCapabilities nc) {
@@ -53,8 +54,7 @@ public final class NetworkCapabilities implements Parcelable {
      * Represents the network's capabilities.  If any are specified they will be satisfied
      * by any Network that matches all of them.
      */
-    private long mNetworkCapabilities = (1 << NET_CAPABILITY_NOT_RESTRICTED) |
-            (1 << NET_CAPABILITY_TRUSTED) | (1 << NET_CAPABILITY_NOT_VPN);
+    private long mNetworkCapabilities;
 
     /**
      * Indicates this is a network that has the ability to reach the
@@ -166,6 +166,28 @@ public final class NetworkCapabilities implements Parcelable {
     private static final int MAX_NET_CAPABILITY = NET_CAPABILITY_VALIDATED;
 
     /**
+     * Capabilities that are set by default when the object is constructed.
+     */
+    private static final long DEFAULT_CAPABILITIES =
+            (1 << NET_CAPABILITY_NOT_RESTRICTED) |
+            (1 << NET_CAPABILITY_TRUSTED) |
+            (1 << NET_CAPABILITY_NOT_VPN);
+
+    /**
+     * Capabilities that suggest that a network is restricted.
+     * {@see #maybeMarkCapabilitiesRestricted}.
+     */
+    private static final long RESTRICTED_CAPABILITIES =
+            (1 << NET_CAPABILITY_CBS) |
+            (1 << NET_CAPABILITY_DUN) |
+            (1 << NET_CAPABILITY_EIMS) |
+            (1 << NET_CAPABILITY_FOTA) |
+            (1 << NET_CAPABILITY_IA) |
+            (1 << NET_CAPABILITY_IMS) |
+            (1 << NET_CAPABILITY_RCS) |
+            (1 << NET_CAPABILITY_XCAP);
+
+    /**
      * Adds the given capability to this {@code NetworkCapability} instance.
      * Multiple capabilities may be applied sequentially.  Note that when searching
      * for a network to satisfy a request, all capabilities requested must be satisfied.
@@ -248,6 +270,26 @@ public final class NetworkCapabilities implements Parcelable {
     }
 
     /**
+     * Removes the NET_CAPABILITY_NOT_RESTRICTED capability if all the capabilities it provides are
+     * typically provided by restricted networks.
+     *
+     * TODO: consider:
+     * - Renaming it to guessRestrictedCapability and make it set the
+     *   restricted capability bit in addition to clearing it.
+     * @hide
+     */
+    public void maybeMarkCapabilitiesRestricted() {
+        // If all the capabilities are typically provided by restricted networks, conclude that this
+        // network is restricted.
+        if ((mNetworkCapabilities & ~(DEFAULT_CAPABILITIES | RESTRICTED_CAPABILITIES)) == 0 &&
+                // Must have at least some restricted capabilities, otherwise a request for an
+                // internet-less network will get marked restricted.
+                (mNetworkCapabilities & RESTRICTED_CAPABILITIES) != 0) {
+            removeCapability(NET_CAPABILITY_NOT_RESTRICTED);
+        }
+    }
+
+    /**
      * Representing the transport type.  Apps should generally not care about transport.  A
      * request for a fast internet connection could be satisfied by a number of different
      * transports.  If any are specified here it will be satisfied a Network that matches
@@ -280,8 +322,14 @@ public final class NetworkCapabilities implements Parcelable {
      */
     public static final int TRANSPORT_VPN = 4;
 
+    /**
+     *Indicates this network uses a PPPOE transport.
+     *@hide
+     */
+    public static final int TRANSPORT_PPPOE = 5;
+
     private static final int MIN_TRANSPORT = TRANSPORT_CELLULAR;
-    private static final int MAX_TRANSPORT = TRANSPORT_VPN;
+    private static final int MAX_TRANSPORT = TRANSPORT_PPPOE; //TRANSPORT_VPN;
 
     /**
      * Adds the given transport type to this {@code NetworkCapability} instance.
@@ -580,6 +628,7 @@ public final class NetworkCapabilities implements Parcelable {
                 case TRANSPORT_BLUETOOTH:   transports += "BLUETOOTH"; break;
                 case TRANSPORT_ETHERNET:    transports += "ETHERNET"; break;
                 case TRANSPORT_VPN:         transports += "VPN"; break;
+                case TRANSPORT_PPPOE:       transports += "PPPOE"; break;
             }
             if (++i < types.length) transports += "|";
         }

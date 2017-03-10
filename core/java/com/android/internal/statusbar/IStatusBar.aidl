@@ -36,12 +36,16 @@ oneway interface IStatusBar
     void buzzBeepBlinked();
     void notificationLightOff();
     void notificationLightPulse(int argb, int millisOn, int millisOff);
-
+    //$_rbox_$_modify_$_huangjc begin, add bar interface
+    void addBar();
+    //$_rbox_$_modify_$_huangjc end
     void showRecentApps(boolean triggeredFromAltTab);
     void hideRecentApps(boolean triggeredFromAltTab, boolean triggeredFromHomeKey);
     void toggleRecentApps();
     void preloadRecentApps();
     void cancelPreloadRecentApps();
     void showScreenPinningRequest();
+    void showSimSwitchUi(int type);
+    void hideSimSwitchUi();
 }
 

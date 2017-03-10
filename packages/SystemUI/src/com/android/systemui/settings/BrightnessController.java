@@ -18,6 +18,7 @@ package com.android.systemui.settings;
 
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.AsyncTask;
@@ -28,7 +29,10 @@ import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.provider.Settings;
+import android.widget.CompoundButton;
 import android.widget.ImageView;
+
+import com.android.systemui.R;
 
 import java.util.ArrayList;
 
@@ -147,8 +151,16 @@ public class BrightnessController implements ToggleSlider.Listener {
         mMinimumBacklight = pm.getMinimumScreenBrightnessSetting();
         mMaximumBacklight = pm.getMaximumScreenBrightnessSetting();
 
-        mAutomaticAvailable = context.getResources().getBoolean(
-                com.android.internal.R.bool.config_automatic_brightness_available);
+        PackageManager packageManager = context.getPackageManager();
+        if (packageManager.hasSystemFeature(PackageManager.FEATURE_SENSOR_LIGHT)) {
+                mAutomaticAvailable = context.getResources().getBoolean(
+                        com.android.internal.R.bool.config_automatic_brightness_available);
+        } else {
+                mAutomaticAvailable = false;
+                final CompoundButton toggle = (CompoundButton)control.findViewById(R.id.toggle);
+                toggle.setClickable(false);
+        }
+
         mPower = IPowerManager.Stub.asInterface(ServiceManager.getService("power"));
     }
 

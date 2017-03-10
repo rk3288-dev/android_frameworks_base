@@ -61,9 +61,10 @@ import android.view.animation.Transformation;
 
 import com.android.internal.R;
 import com.android.server.wm.WindowManagerService.H;
-
+import android.util.Log;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import android.provider.Settings;
 
 class WinAnimatorList extends ArrayList<WindowStateAnimator> {
 }
@@ -71,10 +72,21 @@ class WinAnimatorList extends ArrayList<WindowStateAnimator> {
 /**
  * Keep track of animations and surface operations for a single WindowState.
  **/
-class WindowStateAnimator {
+public class WindowStateAnimator {
     static final String TAG = "WindowStateAnimator";
+	static final boolean DEBUG_ZJY = false;
+	static final boolean DEBUG_ZJY_ANIM = false;
+	void LOGR(String msg){
+		if(DEBUG_ZJY_ANIM){
+			Log.d(TAG,"11111111111111111111"+msg);
+		}
 
-    // Unchanging local convenience fields.
+	}
+	void LOGD(String msg){
+		if(DEBUG_ZJY){
+			Log.d(TAG,"11111111111111111111"+msg);
+		}
+	}
     final WindowManagerService mService;
     final WindowState mWin;
     final WindowStateAnimator mAttachedWinAnimator;
@@ -137,9 +149,9 @@ class WindowStateAnimator {
     boolean mHaveMatrix;
 
     // For debugging, this is the last information given to the surface flinger.
-    boolean mSurfaceShown;
-    float mSurfaceX, mSurfaceY;
-    float mSurfaceW, mSurfaceH;
+    public boolean mSurfaceShown;
+    public float mSurfaceX, mSurfaceY;
+    public float mSurfaceW, mSurfaceH;
     int mSurfaceLayer;
     float mSurfaceAlpha;
 
@@ -188,6 +200,8 @@ class WindowStateAnimator {
     boolean mLastHidden;
 
     int mAttrType;
+
+    boolean mSurfaceHidden;
 
     public WindowStateAnimator(final WindowState win) {
         final WindowManagerService service = win.mService;
@@ -490,6 +504,9 @@ class WindowStateAnimator {
     }
 
     void hide() {
+	if(mSurfaceHidden){
+	    return;
+	}
         if (!mLastHidden) {
             //dump();
             mLastHidden = true;
@@ -909,6 +926,13 @@ class WindowStateAnimator {
                 mSurfaceY = top;
 
                 try {
+	               /*if(mService.mCurConfiguration.enableMultiWindow()){
+						if(mWin.mAttachedWindow != null && mWin.mAttrs.getTitle().toString().equals("SurfaceView")&&
+							mWin.mAttachedWindow.mWinAnimator.mSurfaceControl != null){						
+							LOGR("mWin="+mWin+" mAttach="+mWin.mAttachedWindow);
+							mSurfaceControl.setAttach(mWin.mAttachedWindow.getAttrs().getTitle().toString());
+						}
+					}*/
                     mSurfaceControl.setPosition(left, top);
                     mSurfaceLayer = mAnimLayer;
                     final DisplayContent displayContent = w.getDisplayContent();
@@ -1176,7 +1200,7 @@ class WindowStateAnimator {
 
             if ((DEBUG_SURFACE_TRACE || WindowManagerService.localLOGV)
                     && (mShownAlpha == 1.0 || mShownAlpha == 0.0)) Slog.v(
-                    TAG, "computeShownFrameLocked: Animating " + this + " mAlpha=" + mAlpha
+                    TAG,"win="+mWin+ "computeShownFrameLocked: Animating " + this + " mAlpha=" + mAlpha
                     + " self=" + (selfTransformation ? mTransformation.getAlpha() : "null")
                     + " attached=" + (attachedTransformation == null ?
                             "null" : attachedTransformation.getAlpha())
@@ -1236,6 +1260,7 @@ class WindowStateAnimator {
             }
         } else {
             mWin.mShownFrame.set(mWin.mFrame);
+	
             if (mWin.mXOffset != 0 || mWin.mYOffset != 0) {
                 mWin.mShownFrame.offset(mWin.mXOffset, mWin.mYOffset);
             }
@@ -1254,9 +1279,13 @@ class WindowStateAnimator {
         final int height = w.mFrame.height();
 
         // Compute the offset of the window in relation to the decor rect.
-        final int left = w.mXOffset + w.mFrame.left;
-        final int top = w.mYOffset + w.mFrame.top;
-
+         int left = w.mXOffset + w.mFrame.left;
+         int top = w.mYOffset + w.mFrame.top;
+		 if(w.getAttrs().align == WindowManagerPolicy.WINDOW_ALIGN_RIGHT &&
+		 	w.getAttrs().align == WindowManagerPolicy.WINDOW_ALIGN_TOP){
+			left = w.mXOffset;
+			top = w.mYOffset;
+		 }
         // Initialize the decor rect to the entire frame.
         w.mSystemDecorRect.set(0, 0, width, height);
 
@@ -1285,20 +1314,36 @@ class WindowStateAnimator {
         if (displayContent == null) {
             return;
         }
-
         // Need to recompute a new system decor rect each time.
-        if ((w.mAttrs.flags & LayoutParams.FLAG_SCALED) != 0) {
+        if (((w.mAttrs.flags & LayoutParams.FLAG_SCALED) != 0) && (w.mDisplayContent.getDisplayId() == Display.DEFAULT_DISPLAY)) {
             // Currently can't do this cropping for scaled windows.  We'll
             // just keep the crop rect the same as the source surface.
             w.mSystemDecorRect.set(0, 0, w.mRequestedWidth, w.mRequestedHeight);
-        } else if (!w.isDefaultDisplay()) {
+        } else if (!w.isDefaultDisplay() || w.mDisplayContent.getDisplayId() != Display.DEFAULT_DISPLAY) {
             // On a different display there is no system decor.  Crop the window
             // by the screen boundaries.
+            if (mService.mCurConfiguration.enableMultiWindow()) {
+	            if (w.mHScale != 1.0f || w.mVScale !=1.0f || w.mScaleX != 1.0f || w.mScaleY != 1.0f) {
+				int showWidth = w.mDisplayContent.getDisplayInfo().logicalWidth;
+				int showHeight = w.mDisplayContent.getDisplayInfo().logicalHeight;
+				if (w.mAttachedWindow != null || w.taskId == -1) {
+					w.mScaleX = 1.0f;
+					w.mScaleY = 1.0f;
+					w.mFrame.set(0, 0, showWidth, showHeight);
+					w.mShownFrame.set(0, 0, showWidth, showHeight);
+				}
+				w.mVScale = 1.0f;
+				w.mHScale = 1.0f;
+				w.mActualScale = 1.0f;
+				w.mSurfaceFrame.set(0, 0, showWidth, showHeight);
+	            	}
+            	}
             final DisplayInfo displayInfo = displayContent.getDisplayInfo();
-            w.mSystemDecorRect.set(0, 0, w.mCompatFrame.width(), w.mCompatFrame.height());
-            w.mSystemDecorRect.intersect(-w.mCompatFrame.left, -w.mCompatFrame.top,
-                    displayInfo.logicalWidth - w.mCompatFrame.left,
-                    displayInfo.logicalHeight - w.mCompatFrame.top);
+		w.mCompatFrame.set(new Rect(0, 0, displayInfo.logicalWidth, displayInfo.logicalHeight));
+		w.mSystemDecorRect.set(0, 0, displayInfo.logicalWidth, displayInfo.logicalHeight);
+		w.mSystemDecorRect.intersect(-w.mCompatFrame.left, -w.mCompatFrame.top,
+				displayInfo.logicalWidth - w.mCompatFrame.left,
+				displayInfo.logicalHeight - w.mCompatFrame.top);
         } else if (w.mLayer >= mService.mSystemDecorLayer) {
             // Above the decor layer is easy, just use the entire window.
             // Unless we have a universe background...  in which case all the
@@ -1323,7 +1368,17 @@ class WindowStateAnimator {
             // Crop to the system decor specified by policy.
             applyDecorRect(w.mDecorFrame);
         }
-
+	w.mSfOffsetX = (int)(w.mSystemDecorRect.left*w.mHScale);
+		w.mSfOffsetY = (int)(w.mSystemDecorRect.top*w.mVScale);
+		int surfaceFrameLeft = w.mSfOffsetX + w.mPosX;
+		int surfaceFrameTop = w.mSfOffsetY + w.mPosY;
+     LOGD(w.mSurfaceFrame +"surfaceFrameLeft :" +surfaceFrameLeft +" surfaceFrameTop : "+surfaceFrameTop+" win" + w);
+		if(w.mSurfaceFrame.left!= surfaceFrameLeft ||
+			w.mSurfaceFrame.top != surfaceFrameTop){
+			w.mSurfaceFrame.set(w.mSfOffsetX+w.mPosX, w.mSfOffsetY+w.mPosY,
+							w.mSfOffsetX+w.mPosX+(int)(w.mVisibleFrame.width()*w.mHScale+0.5f),
+							w.mSfOffsetY+w.mPosY+(int)((w.mVisibleFrame.height()+w.mVisibleInsets.bottom)*w.mVScale+0.5f));
+		}
         // By default, the clip rect is the system decor.
         final Rect clipRect = mTmpClipRect;
         clipRect.set(w.mSystemDecorRect);
@@ -1384,6 +1439,26 @@ class WindowStateAnimator {
             // size.
             width  = w.mRequestedWidth;
             height = w.mRequestedHeight;
+	    if (mService.mCurConfiguration.enableMultiWindow() && w.mActualScale < 1.0 && w.mScaleY == 1.0 && w.mScaleX == 1.0) {
+		WindowState ws = null;
+                if(w.mAppWindowState != null){
+			ws = w.mAppWindowState;
+		}else if(w.mAttachedWindow!=null){
+			ws = w.mAttachedWindow;
+                        
+		}
+		if (ws != null) {
+		//w.mAppToken != null) {
+			String packageName = ws.mAttrs.packageName;
+			//try {
+            			//packageName = w.mAppToken.appToken.getActivityPackage();
+			//} catch (RemoteException re) {}
+			if ("cn.wps.moffice_eng".equals(packageName) || "android.rk.RockVideoPlayer".equals(packageName)) {
+				width  = w.mCompatFrame.width();
+				height = w.mCompatFrame.height();
+			}
+		}
+	    }
         } else {
             width = w.mCompatFrame.width();
             height = w.mCompatFrame.height();
@@ -1398,6 +1473,25 @@ class WindowStateAnimator {
             height = 1;
         }
 
+	if (mService.mCurConfiguration.enableMultiWindow() && (w.mAttrs.flags & LayoutParams.FLAG_SCALED) != 0 && (w.mScaleY != 1.0 || w.mScaleX != 1.0)) {
+	    WindowState ws = null;
+                if(w.mAppWindowState != null){
+                        ws = w.mAppWindowState;
+                }else if(w.mAttachedWindow!=null){
+                        ws = w.mAttachedWindow;
+
+                }
+            if (ws != null) {
+		String packageName = ws.mAttrs.packageName;
+	    	float scaleH = height * w.mActualScale * w.mScaleY - 0.5f;
+	    	if (scaleH > w.mSurfaceFrame.height() && ("cn.wps.moffice_eng".equals(packageName) || "android.rk.RockVideoPlayer".equals(packageName))) {
+		    float mActualScale = w.mActualScale * w.mScaleY;
+		    float mScaleY = mActualScale * 100000000f;
+		    height = (int)((w.mSurfaceFrame.height() * 100000000f) / mScaleY);
+	    	}
+	    }
+	}
+
         float left = w.mShownFrame.left;
         float top = w.mShownFrame.top;
 
@@ -1407,6 +1501,76 @@ class WindowStateAnimator {
         height += attrs.surfaceInsets.top + attrs.surfaceInsets.bottom;
         left -= attrs.surfaceInsets.left;
         top -= attrs.surfaceInsets.top;
+int screenW = (w.mDecorFrame.right - w.mDecorFrame.left)/2 - 200;
+		float deltaX = (w.mFrame.left - w.mShownFrame.left)*w.mHScale;
+		float deltaY = (w.mFrame.top  - w.mShownFrame.top)*w.mVScale;
+		//MediaFloat can not be run here. it is a custom window that mAppToken == null;
+		if(mService.mCurConfiguration.enableMultiWindow()){
+			WindowState ws = null;
+			if(w.mAppWindowState != null){
+				ws = w.mAppWindowState;
+			}else if(w.mAttachedWindow!=null){
+				ws = w.mAttachedWindow;
+			}
+			boolean used = false;//Settings.System.getInt(mContext.getContentResolver(),Settings.System.MULTI_WINDOW_USED, 0) ==1;
+			if(!used && ((w.mAttrs.flags & WindowManager.LayoutParams.FLAG_SCALED) != 0
+				|| (w.taskId == -1 && ws != null && ws.mActualScale != 1.0f)
+				|| ((w.mAttrs.flags & WindowManager.LayoutParams.FLAG_DIM_BEHIND)!=0 && w.mActualScale != 1.0f)
+				/*||(w.mAttrs.align == WindowManagerPolicy.WINDOW_ALIGN_RIGHT)*/)){	
+				float dx = 0;
+				float dy = 0;
+				if(ws != null){
+					if(ws.mHScale  > ws.mVScale){
+						dx = (ws.mFrame.width()*(ws.mHScale -ws.mVScale))/2;
+						if(dx <= 0){
+							dx = 0;
+						}
+					}else{
+						dy = (ws.mFrame.height()*(ws.mVScale -ws.mHScale))/2;
+						if(dy <= 0){
+							dy = 0;
+						}
+					}
+					left = ws.mPosX + dx + (int)((w.mFrame.left - ws.mFrame.left) * w.mHScale+0.5f);
+					top =  ws.mPosY + dy + (int)((w.mFrame.top - ws.mFrame.top) * w.mVScale+0.5f);
+					w.mPosX = (int)left;
+					w.mPosY = (int)top;
+				}else{
+					left = w.mPosX - (int)deltaX;
+					top = w.mPosY -(int)deltaY;
+					LOGD("setSurfaceBound 1 left="+left+" top="+top+" win="+w);
+				}
+				//LOGD("setSurfaceBound 1 dx:"+dx+",ws.mPosX="+ws.mPosX+" ws.mHScale="+ws.mHScale+",ws.mVScale:"+ws.mVScale+"left="+left+" top="+top+" win="+w);
+			}else if(w.mAttachedWindow!=null && w.mAttachedWindow.mAppToken!=null){
+				left = mWin.mAttachedWindow.mPosX + (int)((w.mFrame.left - w.mAttachedWindow.mFrame.left) * w.mHScale);
+				top = mWin.mAttachedWindow.mPosY + (int)((w.mFrame.top - w.mAttachedWindow.mFrame.top) * w.mVScale);
+				w.mPosX = (int)left;
+				w.mPosY = (int)top;
+				
+			}else if(w.mActualScale != 1.0f){
+				if(w.mAppWindowState != null){
+					left = w.mAppWindowState.mPosX + (w.mFrame.left - w.mAppWindowState.mFrame.left)*w.mAppWindowState.mHScale;
+					top = w.mAppWindowState.mPosY + (w.mFrame.top - w.mAppWindowState.mFrame.top)*w.mAppWindowState.mVScale;
+					w.mPosX = (int)left;
+					w.mPosY = (int)top;
+				}else{
+					left = w.mPosX - (int)deltaX;
+					top = w.mPosY -(int)deltaY;
+				}
+				//LOGD("  setSurfaceBound deltaX="+deltaX+" deltaY="+deltaY+"left="+left+" top="+top+" win="+w);
+				//LOGD("  setSurfaceBound mFrame="+w.mFrame+"w="+w+" w.mApp="+w.mAppWindowState);
+			}else if((w.mAttrs.align == WindowManagerPolicy.WINDOW_ALIGN_RIGHT && w.mAttrs.width == screenW) ){	
+								left = w.mPosX;
+								top = w.mPosY;						
+				//LOGD("setSurfaceBound  3 left="+left+" top="+top+"  w:"+w);
+			}else{
+				w.mPosX = (int)left;
+				w.mPosY = (int)top;
+			}
+		}else{
+			w.mPosX = (int)left;
+			w.mPosY = (int)top;
+		}
 
         final boolean surfaceMoved = mSurfaceX != left || mSurfaceY != top;
         if (surfaceMoved) {
@@ -1416,7 +1580,7 @@ class WindowStateAnimator {
             try {
                 if (WindowManagerService.SHOW_TRANSACTIONS) WindowManagerService.logSurface(w,
                         "POS " + left + ", " + top, null);
-                mSurfaceControl.setPosition(left, top);
+                mSurfaceControl.setPosition(mSurfaceX, mSurfaceY);
             } catch (RuntimeException e) {
                 Slog.w(TAG, "Error positioning surface of " + w
                         + " pos=(" + left + "," + top + ")", e);
@@ -1503,6 +1667,8 @@ class WindowStateAnimator {
                 || mLastDtDy != mDtDy
                 || w.mLastHScale != w.mHScale
                 || w.mLastVScale != w.mVScale
+                || w.mLastScaleX != w.mScaleX
+                || w.mLastScaleY != w.mScaleY
                 || mLastHidden) {
             displayed = true;
             mLastAlpha = mShownAlpha;
@@ -1513,6 +1679,8 @@ class WindowStateAnimator {
             mLastDtDy = mDtDy;
             w.mLastHScale = w.mHScale;
             w.mLastVScale = w.mVScale;
+			w.mLastScaleX = w.mScaleX;
+			w.mLastScaleY = w.mScaleY;
             if (WindowManagerService.SHOW_TRANSACTIONS) WindowManagerService.logSurface(w,
                     "alpha=" + mShownAlpha + " layer=" + mAnimLayer
                     + " matrix=[" + mDsDx + "*" + w.mHScale
@@ -1526,8 +1694,9 @@ class WindowStateAnimator {
                     mSurfaceLayer = mAnimLayer;
                     mSurfaceControl.setLayer(mAnimLayer);
                     mSurfaceControl.setMatrix(
-                            mDsDx * w.mHScale, mDtDx * w.mVScale,
-                            mDsDy * w.mHScale, mDtDy * w.mVScale);
+                        mDsDx*w.mHScale*w.mScaleX, mDtDx*w.mVScale*w.mScaleY,
+                        mDsDy*w.mHScale*w.mScaleX, mDtDy*w.mVScale*w.mScaleY);
+					//Slog.v(TAG, mLastHidden +"showSurfaceRobustlyLocked mWin=" + mWin+" mDrawState== "+mDrawState);
 
                     if (mLastHidden && mDrawState == HAS_DRAWN) {
                         if (WindowManagerService.SHOW_TRANSACTIONS) WindowManagerService.logSurface(w,
@@ -1579,6 +1748,11 @@ class WindowStateAnimator {
             }
             w.mToken.hasVisible = true;
         }
+		if(w.mAppToken!=null&&w.mAppToken.mAppAnimator!=null&&
+			w.mAppToken.mAppAnimator.animLayerAdjustment==WindowManagerService.TYPE_LAYER_TMP){
+			w.mAppToken.mAppAnimator.animLayerAdjustment = 0;
+			mService.assignLayersLocked(mService.getDefaultWindowListLocked());
+		}
     }
 
     void setTransparentRegionHintLocked(final Region region) {
@@ -1586,12 +1760,24 @@ class WindowStateAnimator {
             Slog.w(TAG, "setTransparentRegionHint: null mSurface after mHasSurface true");
             return;
         }
-        if (SHOW_LIGHT_TRANSACTIONS) Slog.i(TAG, ">>> OPEN TRANSACTION setTransparentRegion");
+		Region adRegion = new Region(region);
+        if (SHOW_LIGHT_TRANSACTIONS) Slog.i(TAG,
+            ">>> OPEN TRANSACTION setTransparentRegion-----adRegion:"+adRegion+",mWin:"+mWin);
+		if(mService.mCurConfiguration.enableMultiWindow()){
+			//if(adRegion.getBounds().contains(mWin.mVisibleFrame)){				
+				Rect bounds = adRegion.getBounds();
+				int offsetX = (int)(mService.mWindowBoundsWidth*mWin.mHScale - 0.5f);
+				int offsetY = (int)(mService.mWindowBoundsWidth*mWin.mVScale - 0.5f);
+				bounds.inset(offsetX,offsetY);				
+				adRegion.op(bounds,Region.Op.INTERSECT);
+				if (SHOW_LIGHT_TRANSACTIONS) Slog.i(TAG,"++++++++++++++++++++bounds:"+bounds+",adRegion:"+adRegion+",offsetX:"+offsetX);
+			//}
+		}
         SurfaceControl.openTransaction();
         try {
             if (SHOW_TRANSACTIONS) WindowManagerService.logSurface(mWin,
-                    "transparentRegionHint=" + region, null);
-            mSurfaceControl.setTransparentRegionHint(region);
+                    "transparentRegionHint=" + adRegion, null);
+            mSurfaceControl.setTransparentRegionHint(adRegion);
         } finally {
             SurfaceControl.closeTransaction();
             if (SHOW_LIGHT_TRANSACTIONS) Slog.i(TAG,
@@ -1673,7 +1859,7 @@ class WindowStateAnimator {
                     + " tok animating="
                     + (mAppAnimator != null ? mAppAnimator.animating : false), e);
         }
-        if (mDrawState == READY_TO_SHOW && mWin.isReadyForDisplayIgnoringKeyguard()) {
+        if (mDrawState == READY_TO_SHOW && (mWin.isReadyForDisplayIgnoringKeyguard()|| mWin.stepOfFourScreen != -1)) {
             if (SHOW_TRANSACTIONS || DEBUG_ORIENTATION)
                 WindowManagerService.logSurface(mWin, "SHOW (performShowLocked)", null);
             if (DEBUG_VISIBILITY || (DEBUG_STARTING_WINDOW &&
@@ -1759,6 +1945,7 @@ class WindowStateAnimator {
     boolean showSurfaceRobustlyLocked() {
         try {
             if (mSurfaceControl != null) {
+				
                 mSurfaceShown = true;
                 mSurfaceControl.show();
                 if (mWin.mTurnOnScreen) {

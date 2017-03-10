@@ -15,24 +15,106 @@
  */
 
 package com.android.server.wm;
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.provider.Settings;
 
 import com.android.server.input.InputManagerService;
 import com.android.server.input.InputApplicationHandle;
 import com.android.server.input.InputWindowHandle;
 
+import android.app.ActivityManager;
 import android.app.ActivityManagerNative;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.res.Configuration;
+
 import android.graphics.Rect;
+import android.graphics.Point;
+import android.graphics.Region;
+
 import android.os.RemoteException;
 import android.util.Log;
 import android.util.Slog;
 import android.view.Display;
 import android.view.InputChannel;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.WindowManager;
-
+import android.content.pm.ResolveInfo;
+import android.content.ComponentName;
+import java.util.ArrayList;
+import java.util.List;
+import android.app.IActivityManager;
+import java.util.ArrayList;
 import java.util.Arrays;
+import android.view.WindowManagerPolicy;
+import static android.view.WindowManager.LayoutParams.FIRST_APPLICATION_WINDOW;
+import static android.view.WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN;
+import static android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN;
+import static android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
+import static android.view.WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR;
+import static android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
+import static android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
+import static android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD;
+import static android.view.WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON;
+import static android.view.WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST;
+import static android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
+import static android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING;
+import static android.view.WindowManager.LayoutParams.LAST_APPLICATION_WINDOW;
+import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_MEDIA;
+import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_MEDIA_OVERLAY;
+import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_PANEL;
+import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_SUB_PANEL;
+import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG;
+import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_STARTING;
+import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION;
+import static android.view.WindowManager.LayoutParams.FIRST_SUB_WINDOW;
+import static android.view.WindowManager.LayoutParams.TYPE_APPLICATION_MEDIA_OVERLAY;
 
-final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
+import static android.view.WindowManager.LayoutParams.TYPE_DRAG;
+import static android.view.WindowManager.LayoutParams.TYPE_DREAM;
+import static android.view.WindowManager.LayoutParams.TYPE_HIDDEN_NAV_CONSUMER;
+import static android.view.WindowManager.LayoutParams.TYPE_KEYGUARD;
+import static android.view.WindowManager.LayoutParams.TYPE_KEYGUARD_DIALOG;
+import static android.view.WindowManager.LayoutParams.TYPE_PHONE;
+import static android.view.WindowManager.LayoutParams.TYPE_PRIORITY_PHONE;
+import static android.view.WindowManager.LayoutParams.TYPE_SEARCH_BAR;
+import static android.view.WindowManager.LayoutParams.TYPE_SECURE_SYSTEM_OVERLAY;
+import static android.view.WindowManager.LayoutParams.TYPE_STATUS_BAR;
+import static android.view.WindowManager.LayoutParams.TYPE_STATUS_BAR_PANEL;
+import static android.view.WindowManager.LayoutParams.TYPE_STATUS_BAR_SUB_PANEL;
+import static android.view.WindowManager.LayoutParams.TYPE_SYSTEM_DIALOG;
+import static android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;
+import static android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ERROR;
+import static android.view.WindowManager.LayoutParams.TYPE_INPUT_METHOD;
+import static android.view.WindowManager.LayoutParams.TYPE_INPUT_METHOD_DIALOG;
+import static android.view.WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY;
+import static android.view.WindowManager.LayoutParams.TYPE_TOAST;
+import static android.view.WindowManager.LayoutParams.TYPE_VOLUME_OVERLAY;
+import static android.view.WindowManager.LayoutParams.TYPE_WALLPAPER;
+import static android.view.WindowManager.LayoutParams.TYPE_POINTER;
+import static android.view.WindowManager.LayoutParams.TYPE_NAVIGATION_BAR;
+import static android.view.WindowManager.LayoutParams.TYPE_NAVIGATION_BAR_PANEL;
+import static android.view.WindowManager.LayoutParams.TYPE_BOOT_PROGRESS;
+
+import com.android.multiwindow.wmservice.InputMonitorController;
+import com.android.multiwindow.wmservice.DispatcherInterface;
+
+final class InputMonitor implements InputManagerService.WindowManagerCallbacks ,DispatcherInterface {
+	private static final String LOGTAG = "InputMonitor";
+	private static boolean DEBUG_ZJY = false;
+	private static boolean DEBUG_ZJY_MOTION = false;
+	private void LOGD(String msg){
+		if(DEBUG_ZJY){
+			Log.d(LOGTAG,"QQQQQQQQQQQQQQQQQ:"+msg);
+		}
+	}
+	private void LOGV(String msg){
+		if(DEBUG_ZJY_MOTION){
+			Log.d(LOGTAG,"QQQQQQQQQQQQQQQQQ:"+msg);
+		}
+	}
     private final WindowManagerService mService;
     
     // Current window with input focus for keys and other non-touch events.  May be null.
@@ -57,11 +139,15 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
     // is received to indicate that the input devices are ready.
     private final Object mInputDevicesReadyMonitor = new Object();
     private boolean mInputDevicesReady;
+	// Set Focus on HOME window.
+	private boolean mDontNeedFocusHome = true;
 
-    Rect mTmpRect = new Rect();
+	Rect mTmpRect = new Rect();
+    private InputMonitorController mInputMonitorController;
 
     public InputMonitor(WindowManagerService service) {
         mService = service;
+	mInputMonitorController = new InputMonitorController(mService, mService.mContext, InputMonitor.this);
     }
     
     /* Notifies the window manager about a broken input channel.
@@ -172,6 +258,7 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
             final boolean hasFocus, final boolean hasWallpaper) {
         // Add a window to our list of input windows.
         inputWindowHandle.name = child.toString();
+        if (false) Slog.d(WindowManagerService.TAG, ">>>>>> ENTERED addInputWindowsLw=================="+inputWindowHandle.name);
         final boolean modal = (flags & (WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                 | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)) == 0;
         if (modal && child.mAppToken != null) {
@@ -212,6 +299,7 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
         }
 
 
+		inputWindowHandle.isHomeWindow = child.isHomeWindow();
         addInputWindowHandleLw(inputWindowHandle);
     }
 
@@ -232,7 +320,7 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
         }
         mUpdateInputWindowsNeeded = false;
 
-        if (false) Slog.d(WindowManagerService.TAG, ">>>>>> ENTERED updateInputWindowsLw");
+       if (false) Slog.d(WindowManagerService.TAG, ">>>>>> ENTERED updateInputWindowsLw");
 
         // Populate the input window list with information about all of the windows that
         // could potentially receive input.
@@ -318,11 +406,11 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
 
         // Send windows to native code.
         mService.mInputManager.setInputWindows(mInputWindowHandles);
-
+		mService.mInputManager.setDontFocusedHome(mDontNeedFocusHome);
         // Clear the list in preparation for the next round.
         clearInputWindowHandlesLw();
 
-        if (false) Slog.d(WindowManagerService.TAG, "<<<<<<< EXITED updateInputWindowsLw");
+       if (false) Slog.d(WindowManagerService.TAG, "<<<<<<< EXITED updateInputWindowsLw");
     }
 
     /* Notifies that the input device configuration has changed. */
@@ -387,6 +475,103 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
         WindowState windowState = focus != null ? (WindowState) focus.windowState : null;
         return mService.mPolicy.interceptKeyBeforeDispatching(windowState, event, policyFlags);
     }
+private boolean modeChange = false;
+private WindowState mCurFocusWindowState = null;
+private boolean validWindowState(WindowState win){
+	boolean isValid = false;
+	if(win != null && "com.android.systemui/com.android.systemui.recent.RecentsActivity".equals(win.getAttrs().getTitle())){
+        isValid = false;
+	}else if(mService.isHomeWindow(win)){
+		isValid = false;
+	}else if((win.getAttrs().type == WindowManager.LayoutParams.TYPE_BASE_APPLICATION||win.getAttrs().type == WindowManager.LayoutParams.TYPE_APPLICATION) &&
+			((win.getAttrs().width == -1 && win.getAttrs().height == -1)||win.isHalfOrPhoneMode()
+			)){
+			//google map run in here
+			//live wallpaper 
+		isValid = true;
+	}
+	return isValid;
+}
+
+     public long interceptMotionBeforeDispatching(
+     		InputWindowHandle focus,MotionEvent event,int policyFlags){
+		int action = event.getAction();	
+		int screenWidth = mService.getDefaultDisplayInfoLocked().logicalWidth;
+		if (mService.mCurConfiguration.dualscreenflag == Configuration.ENABLE_DUAL_SCREEN && 
+				 action == MotionEvent.ACTION_HOVER_MOVE) {
+		int	x1 = (int)event.getX();
+		int	y1 = (int)event.getY();
+			if (/*x1 < 15 || */x1 + 15 > screenWidth) {
+				if(!mService.isWorked("com.android.Listappinfo.ManderService")){
+                                	LOGV("start com.android.Listappinfo.ManderService");
+                                	Intent intent = new Intent();
+                                	intent.setClassName("com.android.Listappinfo", "com.android.Listappinfo.ManderService");
+                                 	mService.mContext.startService(intent);
+                                 	return -1;
+                             	}
+			}
+		}
+    		return mInputMonitorController.interceptMotionBeforeDispatching(mService.mContext,focus, event, policyFlags);
+	}
+
+private boolean maybeModeChange(Point p1, Point p2, Point p3){
+	LOGV("maybeModeChange mCurFocuswindow="+mCurFocusWindowState);
+	if(mCurFocusWindowState == null){
+		return false;
+	}
+	boolean modeChange = false;
+	Rect bounds = mCurFocusWindowState.getSurfaceFrameLw();
+	boolean c1 = bounds.contains(p1.x, p1.y);
+	boolean c2 = bounds.contains(p2.x, p2.y);
+	boolean c3 = bounds.contains(p3.x, p3.y);
+	if(c1 != c2 ||(c1 && c2 && c3)){
+		modeChange = true;
+	}
+	LOGV("maybeModeChange p1="+p1.toString()+" p2="+p2.toString()+" modeChange="+modeChange);
+	return modeChange;
+	
+}
+
+@Override
+public boolean maybeModeChangeInterface(Point p1, Point p2, Point p3) {
+	// TODO Auto-generated method stub
+	return maybeModeChange(p1, p2, p3);
+}
+
+@Override
+public boolean isWorkedInterface(String name) {
+	// TODO Auto-generated method stub
+	return false;
+}
+
+@Override
+public boolean isAppTokenNull(WindowState windowstate) {
+	// TODO Auto-generated method stub
+	return windowstate.mAppToken!=null && windowstate.mAppToken.appToken!=null;
+}
+
+@Override
+public int getAppTokenTaskId(WindowState windowstate){
+	// TODO Auto-generated method stub
+	int taskid = -100;
+	try {
+		taskid = ActivityManagerNative.getDefault().getTaskForActivity(windowstate.mAppToken.appToken.asBinder(),false);
+	} catch (RemoteException e){		
+		LOGV("get apptoken remoteException");
+	}
+	return taskid;
+}
+
+@Override
+public boolean ifDontNeedFocusHome() {
+	return mDontNeedFocusHome;
+}
+
+@Override
+public void setDontNeedFocusHome(boolean set) {
+	mDontNeedFocusHome = set;
+}
+
 
     /* Provides an opportunity for the window manager policy to process a key that
      * the application did not handle. */
@@ -413,6 +598,7 @@ final class InputMonitor implements InputManagerService.WindowManagerCallbacks {
             Slog.d(WindowManagerService.TAG, "Input focus has changed to " + newWindow);
         }
 
+              Log.d(WindowManagerService.TAG, newWindow+"  ==========setInputFocusLw ==========  =======");
         if (newWindow != mInputFocus) {
             if (newWindow != null && newWindow.canReceiveKeys()) {
                 // Displaying a window implicitly causes dispatching to be unpaused.

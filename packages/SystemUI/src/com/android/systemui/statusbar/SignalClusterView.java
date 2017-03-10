@@ -33,6 +33,12 @@ import com.android.systemui.statusbar.policy.SecurityController;
 
 import java.util.ArrayList;
 import java.util.List;
+import android.graphics.PorterDuff;
+import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyManager;
+import android.os.AsyncTask;
+import java.util.HashMap;
+import java.util.Map;
 
 // Intimately tied to the design of res/layout/signal_cluster_view.xml
 public class SignalClusterView
@@ -52,12 +58,16 @@ public class SignalClusterView
     private int mWifiStrengthId = 0;
     private boolean mIsAirplaneMode = false;
     private int mAirplaneIconId = 0;
+    private int mEthernetIconId = 0;
     private int mAirplaneContentDescription;
+    private boolean mEthernetVisible = false;
     private String mWifiDescription;
     private ArrayList<PhoneState> mPhoneStates = new ArrayList<PhoneState>();
 
+	private static Map<Integer,Integer>  mIconTint=new HashMap<>(2);
+
     ViewGroup mWifiGroup;
-    ImageView mVpn, mWifi, mAirplane, mNoSims;
+    ImageView mVpn, mWifi, mAirplane, mNoSims, mEthernet;
     View mWifiAirplaneSpacer;
     View mWifiSignalSpacer;
     LinearLayout mMobileSignalGroup;
@@ -113,6 +123,7 @@ public class SignalClusterView
         mWifi           = (ImageView) findViewById(R.id.wifi_signal);
         mAirplane       = (ImageView) findViewById(R.id.airplane);
         mNoSims         = (ImageView) findViewById(R.id.no_sims);
+        mEthernet       = (ImageView) findViewById(R.id.ethernet);
         mWifiAirplaneSpacer =         findViewById(R.id.wifi_airplane_spacer);
         mWifiSignalSpacer =           findViewById(R.id.wifi_signal_spacer);
         mMobileSignalGroup = (LinearLayout) findViewById(R.id.mobile_signal_group);
@@ -167,7 +178,6 @@ public class SignalClusterView
         state.mMobileDescription = contentDescription;
         state.mMobileTypeDescription = typeContentDescription;
         state.mIsMobileTypeIconWide = isTypeIconWide;
-
         apply();
     }
 
@@ -213,6 +223,14 @@ public class SignalClusterView
         mAirplaneIconId = airplaneIconId;
         mAirplaneContentDescription = contentDescription;
 
+        apply();
+    }
+
+    @Override
+    public void setEthernetIndicators(boolean visible, int ethernetIconId) {
+        mEthernetVisible = visible;
+        mEthernetIconId = ethernetIconId;
+        Log.e("blb","mmEthernetVisible: "+visible);
         apply();
     }
 
@@ -310,8 +328,15 @@ public class SignalClusterView
 
         mNoSims.setVisibility(mNoSimsVisible ? View.VISIBLE : View.GONE);
 
+        if (mEthernetVisible) {
+            mEthernet.setImageResource(mEthernetIconId);
+            mEthernet.setVisibility(View.VISIBLE);
+        } else {
+            mEthernet.setVisibility(View.GONE);
+        }
+
         boolean anythingVisible = mNoSimsVisible || mWifiVisible || mIsAirplaneMode
-                || anyMobileVisible || mVpnVisible;
+                || anyMobileVisible || mVpnVisible || mEthernetVisible;
         setPaddingRelative(0, 0, anythingVisible ? mEndPadding : mEndPaddingNothingVisible, 0);
     }
 
@@ -325,11 +350,15 @@ public class SignalClusterView
         private ViewGroup mMobileGroup;
         private ImageView mMobile, mMobileType;
 
+		private SubscriptionManager mSubscriptionManager;
+
         public PhoneState(int subId, Context context) {
             ViewGroup root = (ViewGroup) LayoutInflater.from(context)
                     .inflate(R.layout.mobile_signal_group, null);
             setViews(root);
             mSubId = subId;
+			mSubscriptionManager = (SubscriptionManager) context.getSystemService(
+                    Context.TELEPHONY_SUBSCRIPTION_SERVICE);
         }
 
         public void setViews(ViewGroup root) {
@@ -340,8 +369,39 @@ public class SignalClusterView
 
         public boolean apply(boolean isSecondaryIcon) {
             if (mMobileVisible && !mIsAirplaneMode) {
+				
+                if (!mIconTint.containsKey(mSubId)){
+                    mIconTint.put(mSubId,0xFFFFFFFF);
+                }
+
+				int iconTint = mIconTint.get(mSubId);
+
+                AsyncTask<Integer,Integer,Integer> task=new AsyncTask<Integer, Integer, Integer>() {
+                    @Override
+                    protected Integer doInBackground(Integer... params) {
+                        SubscriptionInfo info = mSubscriptionManager.getActiveSubscriptionInfo(mSubId);
+                        if (info != null && TelephonyManager.getDefault().isMultiSimEnabled()) {
+                            return info.getIconTint();
+                        }
+                        return params[0];
+                    }
+
+                    @Override
+                    protected void onPostExecute(Integer integer) {
+                        super.onPostExecute(integer);
+                        if (integer!=mIconTint.get(mSubId)){
+                            mMobile.setColorFilter(integer, PorterDuff.Mode.MULTIPLY);
+                            mMobileType.setColorFilter(integer, PorterDuff.Mode.MULTIPLY);
+                            mIconTint.put(mSubId,integer);
+                        }
+                    }
+                };
+                task.execute(iconTint);
+
                 mMobile.setImageResource(mMobileStrengthId);
+				mMobile.setColorFilter(iconTint, PorterDuff.Mode.MULTIPLY);
                 mMobileType.setImageResource(mMobileTypeId);
+				mMobileType.setColorFilter(iconTint, PorterDuff.Mode.MULTIPLY);
                 mMobileGroup.setContentDescription(mMobileTypeDescription
                         + " " + mMobileDescription);
                 mMobileGroup.setVisibility(View.VISIBLE);

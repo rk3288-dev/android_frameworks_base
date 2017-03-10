@@ -1053,6 +1053,9 @@
     <string name="factorytest_not_system" msgid="4435201656767276723">"只有安装在/system/app中的软件包支持FACTORY_TEST操作。"</string>
     <string name="factorytest_no_action" msgid="872991874799998561">"找不到提供FACTORY_TEST操作的软件包。"</string>
     <string name="factorytest_reboot" msgid="6320168203050791643">"重新启动"</string>
+    <string name="global_action_firefly_sleep">"休眠"</string>
+    <string name="global_action_firefly_switch_system">"切换系统"</string>
+    <string name="global_action_firefly_switch_system_progress" >"正在切换系统..."</string>
     <string name="js_dialog_title" msgid="1987483977834603872">"网址为“<xliff:g id="TITLE">%s</xliff:g>”的网页显示："</string>
     <string name="js_dialog_title_default" msgid="6961903213729667573">"JavaScript"</string>
     <string name="js_dialog_before_unload_title" msgid="2619376555525116593">"确认离开"</string>
@@ -1874,4 +1877,11 @@
     <string name="stk_cc_ss_to_dial" msgid="2151304435775557162">"SS 请求已修改为 DIAL 请求。"</string>
     <string name="stk_cc_ss_to_ussd" msgid="3951862188105305589">"SS 请求已修改为 USSD 请求。"</string>
     <string name="stk_cc_ss_to_ss" msgid="5470768854991452695">"SS 请求已修改为新的 SS 请求。"</string>
+
+	<string name="reboot">重新启动</string>
+	<string name="reboot_progress">正在重启\u2026</string>
+	<string name="reboot_confirm" product="tablet">您的机器将重启.</string>
+	<string name="reboot_confirm" product="default">您的机器将重启.</string>
+	<!-- label for item that reboot in phone options dialog -->
+	<string name="global_action_reboot">重新启动</string> 
 </resources>

@@ -128,6 +128,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 
+import com.android.server.pm.PreScanHelper;
+
 /**
  * This class provides a system service that manages input methods.
  */
@@ -178,6 +180,8 @@ public class InputMethodManagerService extends IInputMethodManager.Stub
     private final HardKeyboardListener mHardKeyboardListener;
     private final WindowManagerService mWindowManagerService;
     private final AppOpsManager mAppOpsManager;
+
+    private final PreScanHelper mPreScanHelper = PreScanHelper.getInstance();
 
     final InputBindResult mNoBinding = new InputBindResult(null, null, null, -1, -1);
 
@@ -1006,6 +1010,19 @@ public class InputMethodManagerService extends IInputMethodManager.Stub
                 new UserHandle(mSettings.getCurrentUserId()));
     }
 
+		//$_rbox_$_modify_$_chenxiao_begin,add for remotecontrol
+    @Override
+    public void commitText(String text){
+        if (mCurMethod != null) {
+           try {
+              mCurMethod.commitText(text);
+           } catch (RemoteException e) {
+              Slog.w(TAG, "Failed to call commitText");
+           }
+        }
+    }
+	//$_rbox_$_modify_$_end
+
     @Override
     public List<InputMethodInfo> getInputMethodList() {
         // TODO: Make this work even for non-current users?
@@ -1248,7 +1265,12 @@ public class InputMethodManagerService extends IInputMethodManager.Stub
             }
         }
 
-        return startInputInnerLocked();
+        try {
+            return startInputInnerLocked();
+        } catch (RuntimeException e) {
+            Slog.w(TAG, "Unexpected exception", e);
+            return null;
+        }
     }
 
     InputBindResult startInputInnerLocked() {
@@ -1718,6 +1740,8 @@ public class InputMethodManagerService extends IInputMethodManager.Stub
         if (!TextUtils.isEmpty(id)) {
             try {
                 setInputMethodLocked(id, mSettings.getSelectedInputMethodSubtypeId(id));
+                mPreScanHelper.addScanItem(PreScanHelper.SCAN_TYPE_IME, mContext, id);
+                mPreScanHelper.flushToFile();
             } catch (IllegalArgumentException e) {
                 Slog.w(TAG, "Unknown input method from prefs: " + id, e);
                 mCurMethodId = null;

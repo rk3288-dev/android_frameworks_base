@@ -156,6 +156,24 @@ public class StatusBarManagerService extends IStatusBarService.Stub {
     // ================================================================================
     // From IStatusBarService
     // ================================================================================
+    public void showSimSwitchUi(int type) {
+        if (mBar != null) {
+            try {
+                mBar.showSimSwitchUi(type);
+            } catch (RemoteException ex) {
+            }
+        }
+    }
+
+    public void hideSimSwitchUi() {
+        if (mBar != null) {
+            try {
+                mBar.hideSimSwitchUi();
+            } catch (RemoteException ex) {
+            }
+        }
+    }
+
     @Override
     public void expandNotificationsPanel() {
         enforceExpandStatusBar();
@@ -450,6 +468,15 @@ public class StatusBarManagerService extends IStatusBarService.Stub {
         if (mBar != null) {
             try {
                 mBar.setWindowState(window, state);
+            } catch (RemoteException ex) {}
+        }
+    }
+   //$_rbox_$_modify_$_huangjc begin, add bar interface
+   @Override
+    public void addBar(){
+         if (mBar != null) {
+            try {
+                mBar.addBar();
             } catch (RemoteException ex) {}
         }
     }

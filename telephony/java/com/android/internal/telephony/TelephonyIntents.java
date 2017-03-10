@@ -327,6 +327,11 @@ public class TelephonyIntents {
      */
     public static final String ACTION_SUBINFO_CONTENT_CHANGE
             = "android.intent.action.ACTION_SUBINFO_CONTENT_CHANGE";
+	/**
+	 * @hide
+	 */
+	public static final String ACTION_SUBINFO_ICON_TINT_CHANGE
+            = "android.intent.action.ACTION_SUBINFO_ICON_TINT_CHANGE";
 
     /**
      * <p>Broadcast Action: It indicates subinfo record update is completed
@@ -395,4 +400,8 @@ public class TelephonyIntents {
      */
     public static final String ACTION_SET_RADIO_CAPABILITY_FAILED =
             "android.intent.action.ACTION_SET_RADIO_CAPABILITY_FAILED";
+    public static final String ACTION_MODEM_FAST_OOS_IND =
+            "intel.intent.action.MODEM_FAST_OOS_IND";
+
+    public static final String EXTRA_TOOS_STATE = "state";
 }

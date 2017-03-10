@@ -24,6 +24,9 @@ import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Point;
 import android.graphics.Rect;
+//$_rbox_$_modify_$_chenxiao_begin,add for remotecontrol
+import android.hardware.ISensorManager;
+//$_rbox_$_modify_$_end
 import android.os.Bundle;
 import android.os.IRemoteCallback;
 import android.view.IApplicationToken;
@@ -71,7 +74,9 @@ interface IWindowManager
     void clearForcedDisplayDensity(int displayId);
 
     void setOverscan(int displayId, int left, int top, int right, int bottom);
-
+    //interfaces for mouse keyevent input
+    void dispatchMouse(float x, float y, int w, int h);
+    void dispatchMouseByCd(float x, float y);
     // These can only be called when holding the MANAGE_APP_TOKENS permission.
     void pauseKeyDispatching(IBinder token);
     void resumeKeyDispatching(IBinder token);
@@ -100,7 +105,7 @@ interface IWindowManager
     void executeAppTransition();
     void setAppStartingWindow(IBinder token, String pkg, int theme,
             in CompatibilityInfo compatInfo, CharSequence nonLocalizedLabel, int labelRes,
-            int icon, int logo, int windowFlags, IBinder transferFrom, boolean createIfNeeded);
+            int icon, int logo, int windowFlags, IBinder transferFrom, boolean createIfNeeded,int align);
     void setAppWillBeHidden(IBinder token);
     void setAppVisibility(IBinder token, boolean visible);
     void startAppFreezingScreen(IBinder token, int configChanges);
@@ -170,6 +175,16 @@ interface IWindowManager
      * of its windows even if the rotation hasn't changed.
      */
     void updateRotation(boolean alwaysSendConfiguration, boolean forceRelayout);
+    void updateSurfacesAlpha(boolean change);
+    void multiWindowUsed(boolean used);
+    boolean isMultiWindowMode();
+    void updateAllWindowsPositionStretch();
+    void updateAllWindowsPositionCompose();
+    void updateAllWindowsFullScreenMode(int taskId);
+    void updateAllWindowsHalfScreenMode();
+    void updateAllWindowsFourScreenMode(int taskId);
+    void multiWindowMenuOperation(String actionString);
+    void dispatchUnhandledKey(IApplicationToken token, in KeyEvent event);
 
     /**
      * Retrieve the current screen orientation, constants as per
@@ -263,4 +278,22 @@ interface IWindowManager
      * @return The frame statistics or null if the window does not exist.
      */
     WindowContentFrameStats getWindowContentFrameStats(IBinder token);
+
+       //$_rbox_$_modify_$_chenxiao_begin,add for remotecontrol
+    ISensorManager getRemoteSensorManager();
+
+    void setJoyStick(int index, in int[] position, in int[] size);
+    //$_rbox_$_modify_$_end
+ 
+    //$_rockchip_$_modify_$_huangjc begin,add show/hide TitleBar interface for statusbar
+    void changeTitleBar(boolean isShow);
+    int countHalf(int id);
+    boolean isHardKeyboardA();
+   //$_rockchip_$_modify_$_end
+
+   boolean isTaskShowInExtendDisplay(IBinder token);
+
+   void updateDisplayShowSynchronization();
+   void moveWindowToSecondDisplay();
+   float getStatusBarHeight();
 }

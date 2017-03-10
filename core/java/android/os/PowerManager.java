@@ -293,6 +293,14 @@ public final class PowerManager {
     public static final int USER_ACTIVITY_EVENT_TOUCH = 2;
 
     /**
+     * User activity event type: Capacitive button pressed or released.
+     * modify by cx@rock-chips.com for button & keyboard light
+     * @hide
+     */
+    @SystemApi
+    public static final int USER_ACTIVITY_EVENT_CAPACITIVE_BUTTON = 3;
+
+    /**
      * User activity flag: If already dimmed, extend the dim timeout
      * but do not brighten.  This flag is useful for keeping the screen on
      * a little longer without causing a visible change such as when
@@ -367,7 +375,16 @@ public final class PowerManager {
      * @hide
      */
     public static final String REBOOT_RECOVERY = "recovery";
-    
+
+    /**
+     * @hide
+     */
+    public static final int PERFORMANCE_MODE_NORMAL = 0;
+    /**
+     * @hide
+     */
+    public static final int PERFORMANCE_MODE_PERFORMANCE = 1;
+
     final Context mContext;
     final IPowerManager mService;
     final Handler mHandler;
@@ -833,6 +850,40 @@ public final class PowerManager {
             return false;
         }
     }
+
+    /**
+     * Set the current performance mode.
+     *
+     *
+     * @hide
+     */
+    public void setPerformanceMode(int mode) {
+        try {
+            if (mService != null) {
+                mService.setPerformanceMode(mode);
+            }
+        } catch (RemoteException e) {
+        }
+    }
+
+    /**
+     * Boost the CPU. Boosts the cpu for the given duration in microseconds.
+     * Requires the {@link android.Manifest.permission#CPU_BOOST} permission.
+     *
+     * @param duration in microseconds to boost the CPU
+     *
+     * @hide
+     */
+    public void cpuBoost(int duration)
+    {
+        try {
+            if (mService != null) {
+                mService.cpuBoost(duration);
+            }
+        } catch (RemoteException e) {
+        }
+    }
+
 
     /**
      * Intent that is broadcast when the state of {@link #isPowerSaveMode()} changes.

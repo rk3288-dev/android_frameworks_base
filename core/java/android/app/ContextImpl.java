@@ -84,6 +84,8 @@ import android.net.ConnectivityManager;
 import android.net.IConnectivityManager;
 import android.net.EthernetManager;
 import android.net.IEthernetManager;
+import android.net.pppoe.PppoeManager;
+import android.net.pppoe.IPppoeManager;
 import android.net.INetworkPolicyManager;
 import android.net.NetworkPolicyManager;
 import android.net.NetworkScoreManager;
@@ -210,6 +212,11 @@ class ContextImpl extends Context {
     private final static String TAG = "ContextImpl";
     private final static boolean DEBUG = false;
 
+    static {
+        System.loadLibrary("boot_optimization");
+    }
+
+    private native int checkPermissionNative(String prem, int pid, int uid);
     /**
      * Map from package name, to preference name, to cached preferences.
      */
@@ -630,6 +637,16 @@ class ContextImpl extends Context {
                     IEthernetManager service = IEthernetManager.Stub.asInterface(b);
                     return new EthernetManager(ctx.getOuterContext(), service);
                 }});
+
+//$_rbox_$_modify_$_chenzhi_20120309: for pppoe service
+//$_rbox_$_modify_$ begin
+        registerService(PPPOE_SERVICE, new ServiceFetcher() {
+                 public Object createService(ContextImpl ctx) {
+                    IBinder b = ServiceManager.getService(PPPOE_SERVICE);
+                    IPppoeManager service = IPppoeManager.Stub.asInterface(b);
+                    return new PppoeManager(service, ctx.mMainThread.getHandler());
+                 }});
+//$_rbox_$_modify_$ end
 
         registerService(WINDOW_SERVICE, new ServiceFetcher() {
                 Display mDefaultDisplay;
@@ -1924,7 +1941,7 @@ class ContextImpl extends Context {
     public void enforcePermission(
             String permission, int pid, int uid, String message) {
         enforce(permission,
-                checkPermission(permission, pid, uid),
+				checkPermissionNative(permission, pid, uid),
                 false,
                 uid,
                 message);
@@ -2294,7 +2311,7 @@ class ContextImpl extends Context {
                 resources = mResourcesManager.getTopLevelResources(packageInfo.getResDir(),
                         packageInfo.getSplitResDirs(), packageInfo.getOverlayDirs(),
                         packageInfo.getApplicationInfo().sharedLibraryFiles, displayId,
-                        overrideConfiguration, compatInfo, activityToken);
+                        overrideConfiguration, compatInfo, activityToken, packageInfo.getPackageName());
             }
         }
         mResources = resources;

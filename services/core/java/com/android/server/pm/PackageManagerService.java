@@ -56,6 +56,7 @@ import static com.android.internal.content.NativeLibraryHelper.LIB_DIR_NAME;
 import static com.android.internal.util.ArrayUtils.appendInt;
 import static com.android.internal.util.ArrayUtils.removeInt;
 
+import android.util.Xml;
 import android.util.ArrayMap;
 
 import com.android.internal.R;
@@ -78,6 +79,8 @@ import com.android.server.pm.Settings.DatabaseVersion;
 import com.android.server.storage.DeviceStorageMonitorInternal;
 
 import org.xmlpull.v1.XmlSerializer;
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserException;
 
 import android.app.ActivityManager;
 import android.app.ActivityManagerNative;
@@ -119,7 +122,9 @@ import android.content.pm.PackageManager.LegacyPackageDeleteObserver;
 import android.content.pm.PackageParser.ActivityIntentInfo;
 import android.content.pm.PackageParser.PackageLite;
 import android.content.pm.PackageParser.PackageParserException;
+import android.content.pm.PackageParser.ScanPkg;
 import android.content.pm.PackageParser;
+import android.content.pm.PackageParser.MultiWindowMode;
 import android.content.pm.PackageStats;
 import android.content.pm.PackageUserState;
 import android.content.pm.ParceledListSlice;
@@ -151,6 +156,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.Parcel;
 import android.os.ParcelFileDescriptor;
+import android.os.PowerManager;
 import android.os.Process;
 import android.os.RemoteException;
 import android.os.SELinux;
@@ -199,6 +205,7 @@ import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.HashMap;	
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -218,7 +225,14 @@ import dalvik.system.VMRuntime;
 
 import libcore.io.IoUtils;
 import libcore.util.EmptyArray;
+import java.io.FileWriter;
+import java.io.BufferedWriter;
 
+import com.android.server.pm.PreScanHelper;
+import com.android.server.pm.PreScanHelper.PreScanPackageItem;
+
+import android.os.HandlerThread;
+import android.view.inputmethod.InputMethod;
 /**
  * Keep track of all those .apks everywhere.
  * 
@@ -231,11 +245,13 @@ adb shell am instrument -w -e class com.android.unit_tests.PackageManagerTests c
  * 
  * {@hide}
  */
-public class PackageManagerService extends IPackageManager.Stub {
+public class PackageManagerService extends IPackageManager.Stub 
+	implements ScanPkg {
     static final String TAG = "PackageManager";
     static final boolean DEBUG_SETTINGS = false;
     static final boolean DEBUG_PREFERRED = false;
     static final boolean DEBUG_UPGRADE = false;
+    static final boolean DEBUG_BOOT_BOOST = false;
     private static final boolean DEBUG_INSTALL = false;
     private static final boolean DEBUG_REMOVE = false;
     private static final boolean DEBUG_BROADCASTS = false;
@@ -271,6 +287,7 @@ public class PackageManagerService extends IPackageManager.Stub {
     static final int SCAN_TRUSTED_OVERLAY = 1<<9;
     static final int SCAN_DELETE_DATA_ON_FAILURES = 1<<10;
     static final int SCAN_REPLACING = 1<<11;
+    static final int SCAN_REQUIRE_KNOWN = 1<<12;
 
     static final int REMOVE_CHATTY = 1<<16;
 
@@ -323,6 +340,10 @@ public class PackageManagerService extends IPackageManager.Stub {
 
     private static final String VENDOR_OVERLAY_DIR = "/vendor/overlay";
 
+    private static final String VENDOR_3RD_APP_DIR = "/system/vendor/3rd-app";
+
+    private static final String VENDOR_3RD_APP_DISABLED_DIR = "/data/3rd-app-disabled";
+
     private static String sPreferredInstructionSet;
 
     final ServiceThread mHandlerThread;
@@ -349,6 +370,8 @@ public class PackageManagerService extends IPackageManager.Stub {
     final int mDefParseFlags;
     final String[] mSeparateProcesses;
     final boolean mIsUpgrade;
+	final PackageManagerService mPms = this;
+    final boolean mIsEnableBootBoost;
 
     // This is where all application persistent data goes.
     final File mAppDataDir;
@@ -383,6 +406,12 @@ public class PackageManagerService extends IPackageManager.Stub {
     // the suffix "LI".
     final Object mInstallLock = new Object();
 
+    private final PreScanHelper mPreScanHelper = PreScanHelper.getInstance();
+    private static final HandlerThread sLazyScanThread = new HandlerThread("lazy-scan");
+    static {
+        sLazyScanThread.start();
+    }
+    private static final Handler sLazyScanHandler = new Handler(sLazyScanThread.getLooper());
     // ----------------------------------------------------------------
 
     // Keys are String (package name), values are Package.  This also serves
@@ -464,7 +493,7 @@ public class PackageManagerService extends IPackageManager.Stub {
     /** Set of packages associated with each app op permission. */
     final ArrayMap<String, ArraySet<String>> mAppOpPermissionPackages = new ArrayMap<>();
 
-    final PackageInstallerService mInstallerService;
+    PackageInstallerService mInstallerService;
 
     ArraySet<PackageParser.Package> mDeferredDexOpt = null;
 
@@ -486,6 +515,8 @@ public class PackageManagerService extends IPackageManager.Stub {
     ComponentName mCustomResolverComponentName;
 
     boolean mResolverReplaced = false;
+    boolean mFirstBoot = false;
+    boolean mOtaBoot = false;
 
     // Set of pending broadcasts for aggregating enable/disable of components.
     static class PendingPackageBroadcasts {
@@ -1346,6 +1377,9 @@ public class PackageManagerService extends IPackageManager.Stub {
         mSystemPermissions = systemConfig.getSystemPermissions();
         mAvailableFeatures = systemConfig.getAvailableFeatures();
 
+	getAppMultiWindowMode(null);
+
+        boolean matchHome = false;
         synchronized (mInstallLock) {
         // writer
         synchronized (mPackages) {
@@ -1391,6 +1425,37 @@ public class PackageManagerService extends IPackageManager.Stub {
 
             mRestoredSettings = mSettings.readLPw(this, sUserManager.getUsers(false),
                     mSdkVersion, mOnlyCore);
+
+            final int callingUserId = UserHandle.getCallingUserId();
+
+            mPreScanHelper.initialize(this);
+            mIsEnableBootBoost = mPreScanHelper.isEnableBootBoost();
+
+            if (mIsEnableBootBoost) {
+                SystemProperties.set("sys.pms.finishscan", "false");
+                String defaultHomePackage = SystemProperties.get("persist.sys.default_launcher", "unknown");
+                matchHome = !defaultHomePackage.equals("unknown");
+                if (DEBUG_BOOT_BOOST) Slog.v(TAG, "defaultHomePackage=" + defaultHomePackage + " matchHome=" + matchHome);
+                // User choose a home, we need to check that if it is our launcher
+                PreferredIntentResolver pir = mSettings.mPreferredActivities.get(callingUserId);
+                if (pir != null) {
+                    Intent intent = new Intent("android.intent.action.MAIN");
+                    intent.addCategory("android.intent.category.HOME");
+                    intent.addCategory("android.intent.category.DEFAULT");
+                    List<PreferredActivity> matches = pir.queryIntent(
+                            intent, null, true, callingUserId);
+                    if (DEBUG_BOOT_BOOST) Slog.v(TAG, matches.size() + " preferred matches for " + intent);
+                    if (matches != null && (matches.size() > 0)) matchHome = false;
+                    for (int i = 0; i < matches.size(); i++) {
+                        PreferredActivity pa = matches.get(i);
+                        if (pa.mPref.mComponent.getPackageName().equals(defaultHomePackage)) {
+                            if (DEBUG_BOOT_BOOST) Slog.v(TAG, "match defaultHomePackage=" + defaultHomePackage + " matchHome set true");
+                            matchHome = true;
+                            break;
+                        }
+                    }
+                }
+            }
 
             String customResolverActivity = Resources.getSystem().getString(
                     R.string.config_customResolverActivity);
@@ -1548,14 +1613,49 @@ public class PackageManagerService extends IPackageManager.Stub {
 
             // Collected privileged system packages.
             final File privilegedAppDir = new File(Environment.getRootDirectory(), "priv-app");
-            scanDirLI(privilegedAppDir, PackageParser.PARSE_IS_SYSTEM
-                    | PackageParser.PARSE_IS_SYSTEM_DIR
-                    | PackageParser.PARSE_IS_PRIVILEGED, scanFlags, 0);
-
+            if (!mIsEnableBootBoost) {
+                scanDirLI(privilegedAppDir, PackageParser.PARSE_IS_SYSTEM
+                        | PackageParser.PARSE_IS_SYSTEM_DIR
+                        | PackageParser.PARSE_IS_PRIVILEGED, scanFlags, 0);
+            }
             // Collect ordinary system packages.
             final File systemAppDir = new File(Environment.getRootDirectory(), "app");
-            scanDirLI(systemAppDir, PackageParser.PARSE_IS_SYSTEM
-                    | PackageParser.PARSE_IS_SYSTEM_DIR, scanFlags, 0);
+            if (!mIsEnableBootBoost) {
+                scanDirLI(systemAppDir, PackageParser.PARSE_IS_SYSTEM
+                        | PackageParser.PARSE_IS_SYSTEM_DIR, scanFlags, 0);
+            }
+            if (mIsEnableBootBoost) {
+                mPreScanHelper.loadPreScanPackages();
+                if (DEBUG_BOOT_BOOST) Slog.v(TAG, "matchHome: "+matchHome);
+
+                mFirstBoot = isFirstBoot();
+                mOtaBoot = mPreScanHelper.isOtaBoot();
+
+                mPreScanHelper.scanNecessary(privilegedAppDir, systemAppDir, matchHome, scanFlags, mFirstBoot, mOtaBoot);
+            }
+            //$_rockchip_$_modify_by huangjc Collect all preinstall packages.
+            File preinstallAppDir = new File(Environment.getRootDirectory(), "preinstall");
+            File preinstallAppDelDir = new File(Environment.getRootDirectory(),
+                    "preinstall_del");
+            if (!SystemProperties.getBoolean("persist.sys.preinstalled", false)) {
+                // mPreInstallObserver = new AppDirObserver(
+                // mPreinstallAppDir.getPath(), OBSERVER_EVENTS, false);
+                // mPreInstallObserver.startWatching();
+
+                if (preinstallAppDir.exists()) {
+                    // scanDirLI(mPreinstallAppDir, 0, scanMode, 0);
+                    copyPackagesToAppInstallDir(preinstallAppDir);
+                }
+
+                // mPreInstallDelObserver = new AppDirObserver(
+                // mPreinstallAppDelDir.getPath(), OBSERVER_EVENTS, false);
+                // mPreInstallDelObserver.startWatching();
+                if (preinstallAppDelDir.exists()) {
+                    copyPackagesToAppInstallDir(preinstallAppDelDir);
+                    deletePreinstallDir(preinstallAppDelDir);
+                }
+                SystemProperties.set("persist.sys.preinstalled", "1");
+            }//$_rockchip_$_modify_end
 
             // Collect all vendor packages.
             File vendorAppDir = new File("/vendor/app");
@@ -1571,6 +1671,10 @@ public class PackageManagerService extends IPackageManager.Stub {
             final File oemAppDir = new File(Environment.getOemDirectory(), "app");
             scanDirLI(oemAppDir, PackageParser.PARSE_IS_SYSTEM
                     | PackageParser.PARSE_IS_SYSTEM_DIR, scanFlags, 0);
+
+            // Collect third app packages.
+            File vendor3rdAppDir = new File(VENDOR_3RD_APP_DIR);
+            scanDirLI(vendor3rdAppDir, 0, scanFlags, 0);
 
             if (DEBUG_UPGRADE) Log.v(TAG, "Running installd update commands");
             mInstaller.moveFiles();
@@ -1617,10 +1721,12 @@ public class PackageManagerService extends IPackageManager.Stub {
                     }
 
                     if (!mSettings.isDisabledSystemPackageLPr(ps.name)) {
-                        psit.remove();
-                        logCriticalInfo(Log.WARN, "System package " + ps.name
-                                + " no longer exists; wiping its data");
-                        removeDataDirsLI(ps.name);
+                        if (!mIsEnableBootBoost) {
+                            psit.remove();
+                            logCriticalInfo(Log.WARN, "System package " + ps.name
+                                    + " no longer exists; wiping its data");
+                            removeDataDirsLI(ps.name);
+                        }
                     } else {
                         final PackageSetting disabledPs = mSettings.getDisabledSystemPkgLPr(ps.name);
                         if (disabledPs.codePath == null || !disabledPs.codePath.exists()) {
@@ -1643,13 +1749,13 @@ public class PackageManagerService extends IPackageManager.Stub {
             // Remove any shared userIDs that have no associated packages
             mSettings.pruneSharedUsersLPw();
 
-            if (!mOnlyCore) {
+            if (!mIsEnableBootBoost || (!mOnlyCore && mFirstBoot) || (!mOnlyCore && mOtaBoot)) {
                 EventLog.writeEvent(EventLogTags.BOOT_PROGRESS_PMS_DATA_SCAN_START,
                         SystemClock.uptimeMillis());
-                scanDirLI(mAppInstallDir, 0, scanFlags, 0);
+                scanDirLI(mAppInstallDir, 0, scanFlags | SCAN_REQUIRE_KNOWN, 0);
 
                 scanDirLI(mDrmAppPrivateInstallDir, PackageParser.PARSE_FORWARD_LOCK,
-                        scanFlags, 0);
+                        scanFlags | SCAN_REQUIRE_KNOWN, 0);
 
                 /**
                  * Remove disable package settings for any updated system
@@ -1800,7 +1906,176 @@ public class PackageManagerService extends IPackageManager.Stub {
         // are all flushed.  Not really needed, but keeps things nice and
         // tidy.
         Runtime.getRuntime().gc();
+        /*
+         * scanDir in lazy-scan thread
+         */
+        if (mIsEnableBootBoost && (!(mFirstBoot || (!mFirstBoot && !matchHome) || mOtaBoot))) {
+            sLazyScanHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (DEBUG_BOOT_BOOST) Slog.v(TAG, "enter sLazyScanHandler");
+                    final int scanFlags = SCAN_NO_PATHS | SCAN_DEFER_DEX | SCAN_BOOTING;
+                    final ArrayMap<String, File> expectingBetter = mPreScanHelper.getExpectingBetter(mSettings, mPackages);
+                    File vendorAppDir = new File("/vendor/app");
+                    final File oemAppDir = new File(Environment.getOemDirectory(), "app");
+                    mPreScanHelper.lazyScan(mAppInstallDir, mDrmAppPrivateInstallDir, mSettings, mPackages);
+
+                    // Now that we know all of the shared libraries, update all clients to have
+                    // the correct library paths.
+                    updateAllSharedLibrariesLPw();
+
+                    for (SharedUserSetting setting : mSettings.getAllSharedUsersLPw()) {
+                        // NOTE: We ignore potential failures here during a system scan (like
+                        // the rest of the commands above) because there's precious little we
+                        // can do about it. A settings error is reported, though.
+                        adjustCpuAbisForSharedUserLPw(setting.packages, null /* scanned package */,
+                                false /* force dexopt */, false /* defer dexopt */);
+                    }
+
+                    // Now that we know all the packages we are keeping,
+                    // read and update their last usage times.
+                    mPackageUsage.readLP();
+                    EventLog.writeEvent(EventLogTags.BOOT_PROGRESS_PMS_SCAN_END,
+                            SystemClock.uptimeMillis());
+
+                    // If the platform SDK has changed since the last time we booted,
+                    // we need to re-grant app permission to catch any new ones that
+                    // appear.  This is really a hack, and means that apps can in some
+                    // cases get permissions that the user didn't initially explicitly
+                    // allow...  it would be nice to have some better way to handle
+                    // this situation.
+					mPreScanHelper.reGrantPermission(mSettings, mSdkVersion);
+                    Intent intent = new Intent("com.android.prescan.FINISH")
+                        .addFlags(Intent.FLAG_RECEIVER_NO_ABORT)
+                        .addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
+                    mContext.sendBroadcast(intent);
+                }
+            }, 8000);
+        } else {
+            //mInstallerService = new PackageInstallerService(mContext, this, mAppInstallDir);
+
+            // Now after opening every single application zip, make sure they
+            // are all flushed.  Not really needed, but keeps things nice and
+            // tidy.
+            //Runtime.getRuntime().gc();
+            SystemProperties.set("sys.pms.finishscan", "true");
+        }
     }
+
+   //$_rockchip_$_modify_by huangjc add copyPackagesToAppInstallDir
+    private void copyPackagesToAppInstallDir(File srcDir) {
+        String[] files = srcDir.list();
+        if (files == null) {
+            Log.d(TAG, "No files in app dir " + srcDir);
+            return;
+        }
+
+        int i;
+        for (i = 0; i < files.length; i++) {
+            File srcFile = new File(srcDir, files[i]);
+            File destFile = new File(mAppInstallDir, files[i]);
+            Slog.d(TAG, "Copy " + srcFile.getPath() + " to " + destFile.getPath());
+     /*       //copy apk only
+            if (srcFile.isDirectory()) {
+             File[] prefiles = srcFile.listFiles();
+            for (final File f : prefiles) {
+              if (f.isFile()) {
+                  if (f.getName().endsWith(".apk")) {
+                   File FdesName = new File(mAppInstallDir,f.getName());
+                   Slog.d(TAG, "Copy " + f.getPath() + " to " + FdesName.getPath()); 
+                  if (!FileUtils.copyFile(f, FdesName)) {
+                   Slog.d(TAG, "Copy " + f.getPath() + " to " + FdesName.getPath() + " fail");
+                   continue;
+                  }
+            FileUtils.setPermissions(FdesName.getAbsolutePath(), 0755, -1, -1);
+                  
+                  }
+              }
+           }
+           }
+      */      
+        //copy all Directory
+          if (copyDirectory(srcFile.getPath(),destFile.getPath()))
+          {
+                Slog.d(TAG,"Directory "+destFile.getPath()+" Copy Successfully!");
+          }
+          else
+          {
+                Slog.e(TAG,"Directory "+destFile.getPath()+" Copy fail!");
+            }
+            FileUtils.setPermissions(destFile.getAbsolutePath(), 0755, -1, -1);
+      
+        }
+    }
+   
+    public boolean copyDirectory(String SrcDirectoryPath,
+                               String DesDirectoryPath)
+  {
+    try
+    {
+      //創建不存在的目錄
+      File F0 = new File(DesDirectoryPath);
+      if (!F0.exists())
+      {
+        if (!F0.mkdir())
+        {
+          Slog.e(TAG,"mkdir fail!");
+        }
+      }
+      FileUtils.setPermissions(DesDirectoryPath, 0755, -1, -1);
+      File F = new File(SrcDirectoryPath);
+      File[] allFile = F.listFiles(); //取得當前目錄下面的所有文件，將其放在文件數組中
+      int totalNum = allFile.length; //取得當前文件夾中有多少文件（包括文件夾）
+      String srcName = "";
+      String desName = "";
+      int currentFile = 0;
+      //一個一個的拷貝文件
+      for (currentFile = 0; currentFile < totalNum; currentFile++)
+      {
+        if (!allFile[currentFile].isDirectory())
+        {
+          //如果是文件是采用處理文件的方式
+          desName =DesDirectoryPath + "/" + allFile[currentFile].getName();
+           File FdesName = new File(desName);
+          if (!FileUtils.copyFile(allFile[currentFile], FdesName)) {
+                   Slog.d(TAG, "Copy " + allFile[currentFile].getPath() + " to " + FdesName.getPath() +
+" fail");
+                   continue;
+              }
+            FileUtils.setPermissions(FdesName.getAbsolutePath(), 0644, -1, -1);
+        }
+        //如果是文件夾就采用遞歸處理
+        else
+        {
+          //利用遞歸讀取文件夾中的子文件下的內容，再讀子文件夾下面的子文件夾下面的內容...
+          if (copyDirectory(allFile[currentFile].getPath().toString(),
+                            DesDirectoryPath + "/" +allFile[currentFile].getName().toString()))
+          {
+            //System.out.println("D Copy Successfully!");
+          }
+          else
+          {
+            System.out.println("SubDirectory Copy Error!");
+          }
+        }
+      }
+      return true;
+    }
+    catch (Exception e)
+    {
+      e.printStackTrace();
+      return false;
+    }
+  }
+  //$_rockchip_$_modify_end
+    private void deletePreinstallDir(File dir) {
+        String[] files = dir.list();
+        if (files != null) {
+            Slog.d(TAG, "Ready to cleanup preinstall");
+            SystemProperties.set("ctl.start", "preinst_clr");
+        }
+    }
+
 
     @Override
     public boolean isFirstBoot() {
@@ -4133,7 +4408,7 @@ public class PackageManagerService extends IPackageManager.Stub {
         return true;
     }
 
-    private void scanDirLI(File dir, int parseFlags, int scanFlags, long currentTime) {
+    public void scanDirLI(File dir, int parseFlags, int scanFlags, long currentTime) {
         final File[] files = dir.listFiles();
         if (ArrayUtils.isEmpty(files)) {
             Log.d(TAG, "No files in app dir " + dir);
@@ -4238,17 +4513,31 @@ public class PackageManagerService extends IPackageManager.Stub {
     }
 
     /*
+     * if VENDOR_3RD_APP_DISABLED_DIR contains the directory of package name,
+     * return true, otherwise return false.
+     */
+    private boolean isVendor3rdAppDisabled(String scanPath, String pkgName) {
+        if (scanPath.startsWith(VENDOR_3RD_APP_DIR)) {
+            final File filter = new File(VENDOR_3RD_APP_DISABLED_DIR, pkgName);
+            return filter.isDirectory();
+        }
+        return false;
+    }
+
+
+    /*
      *  Scan a package and return the newly parsed package.
      *  Returns null in case of errors and the error code is stored in mLastScanError
      */
-    private PackageParser.Package scanPackageLI(File scanFile, int parseFlags, int scanFlags,
+    public PackageParser.Package scanPackageLI(File scanFile, int parseFlags, int scanFlags,
             long currentTime, UserHandle user) throws PackageManagerException {
-        if (DEBUG_INSTALL) Slog.d(TAG, "Parsing: " + scanFile);
+        String scanPath = scanFile.getPath();
         parseFlags |= mDefParseFlags;
         PackageParser pp = new PackageParser();
         pp.setSeparateProcesses(mSeparateProcesses);
         pp.setOnlyCoreApps(mOnlyCore);
         pp.setDisplayMetrics(mMetrics);
+	pp.setModeList(this);
 
         if ((scanFlags & SCAN_TRUSTED_OVERLAY) != 0) {
             parseFlags |= PackageParser.PARSE_TRUSTED_OVERLAY;
@@ -4259,6 +4548,11 @@ public class PackageManagerService extends IPackageManager.Stub {
             pkg = pp.parsePackage(scanFile, parseFlags);
         } catch (PackageParserException e) {
             throw PackageManagerException.from(e);
+        }
+
+        if (isVendor3rdAppDisabled(scanPath, pkg.packageName)) {
+            Slog.w(TAG, "skip 3rd party apk: " + pkg.packageName);
+            return null;
         }
 
         PackageSetting ps = null;
@@ -4672,7 +4966,7 @@ public class PackageManagerService extends IPackageManager.Stub {
                     Log.w(TAG, "Not running dexopt on remaining apps due to low memory: " + usableSpace);
                     break;
                 }
-                performBootDexOpt(pkg, ++i, total);
+                //performBootDexOpt(pkg, ++i, total);
             }
         }
     }
@@ -4883,6 +5177,9 @@ public class PackageManagerService extends IPackageManager.Stub {
                         Log.i(TAG, "Running dexopt on: " + path + " pkg="
                                 + pkg.applicationInfo.packageName + " isa=" + dexCodeInstructionSet
                                 + " vmSafeMode=" + vmSafeMode);
+ 			 if(pkg.applicationInfo.packageName.contains("com.android.cts")||pkg.applicationInfo.packageName.contains("com.google.android.xts")){
+                            SystemProperties.set("sys.cts_gts.status","true");
+                        }
                         final int sharedGid = UserHandle.getSharedAppGid(pkg.applicationInfo.uid);
                         final int ret = mInstaller.dexopt(path, sharedGid, !isForwardLocked(pkg),
                                 pkg.packageName, dexCodeInstructionSet, vmSafeMode);
@@ -5347,6 +5644,28 @@ public class PackageManagerService extends IPackageManager.Stub {
             throw new PackageManagerException(INSTALL_FAILED_DUPLICATE_PACKAGE,
                     "Application package " + pkg.packageName
                     + " already installed.  Skipping duplicate.");
+        }
+
+        // If we're only installing presumed-existing packages, require that the
+        // scanned APK is both already known and at the path previously established
+        // for it.  Previously unknown packages we pick up normally, but if we have an
+        // a priori expectation about this package's install presence, enforce it.
+        if ((scanFlags & SCAN_REQUIRE_KNOWN) != 0) {
+            PackageSetting known = mSettings.peekPackageLPr(pkg.packageName);
+            if (known != null) {
+                if (DEBUG_PACKAGE_SCANNING) {
+                    Log.d(TAG, "Examining " + pkg.codePath
+                            + " and requiring known paths " + known.codePathString
+                            + " & " + known.resourcePathString);
+                }
+                if (!pkg.applicationInfo.getCodePath().equals(known.codePathString)
+                        || !pkg.applicationInfo.getResourcePath().equals(known.resourcePathString)) {
+                    throw new PackageManagerException(INSTALL_FAILED_PACKAGE_CHANGED,
+                            "Application package " + pkg.packageName
+                            + " found at " + pkg.applicationInfo.getCodePath()
+                            + " but expected at " + known.codePathString + "; ignoring.");
+                }
+            }
         }
 
         // Initialize package source and resource directories
@@ -6647,10 +6966,12 @@ public class PackageManagerService extends IPackageManager.Stub {
 
         final boolean has64BitLibs;
         final boolean has32BitLibs;
+        final File clusterRootDir;
         if (isApkFile(codeFile)) {
             // Monolithic install
             has64BitLibs = (new File(apkRoot, new File(LIB64_DIR_NAME, apkName).getPath())).exists();
             has32BitLibs = (new File(apkRoot, new File(LIB_DIR_NAME, apkName).getPath())).exists();
+            clusterRootDir = null;
         } else {
             // Cluster install
             final File rootDir = new File(codeFile, LIB_DIR_NAME);
@@ -6668,6 +6989,7 @@ public class PackageManagerService extends IPackageManager.Stub {
             } else {
                 has32BitLibs = false;
             }
+            clusterRootDir = rootDir;
         }
 
         if (has64BitLibs && !has32BitLibs) {
@@ -6705,6 +7027,16 @@ public class PackageManagerService extends IPackageManager.Stub {
         } else {
             pkg.applicationInfo.primaryCpuAbi = null;
             pkg.applicationInfo.secondaryCpuAbi = null;
+            if (clusterRootDir != null) {
+                if ((VMRuntime.is64BitInstructionSet(getPreferredInstructionSet()))
+                    && ((new File(clusterRootDir, new String("arm64"))).exists())) {
+                    pkg.applicationInfo.primaryCpuAbi = new String("arm64-v8a");
+                } else if ((new File(clusterRootDir, (new String("arm")))).exists()) {
+                    pkg.applicationInfo.primaryCpuAbi = new String("armeabi-v7a");
+                } else if ((new File(clusterRootDir, (new String("arm64")))).exists()) {
+                    pkg.applicationInfo.primaryCpuAbi = new String("arm64-v8a");
+                }
+            }
         }
     }
 
@@ -6950,7 +7282,7 @@ public class PackageManagerService extends IPackageManager.Stub {
     static final int UPDATE_PERMISSIONS_REPLACE_PKG = 1<<1;
     static final int UPDATE_PERMISSIONS_REPLACE_ALL = 1<<2;
 
-    private void updatePermissionsLPw(String changingPkg,
+    public void updatePermissionsLPw(String changingPkg,
             PackageParser.Package pkgInfo, int flags) {
         // Make sure there are no dangling permission trees.
         Iterator<BasePermission> it = mSettings.mPermissionTrees.values().iterator();
@@ -9091,7 +9423,8 @@ public class PackageManagerService extends IPackageManager.Stub {
                  */
                 final int requiredUid = mRequiredVerifierPackage == null ? -1
                         : getPackageUid(mRequiredVerifierPackage, userIdentifier);
-                if (!origin.existing && requiredUid != -1
+		boolean skipVerification =  "true".equals(SystemProperties.get("ro.config.enable.skipverify","false"));
+                if (!skipVerification && !origin.existing && requiredUid != -1
                         && isVerificationEnabled(userIdentifier, installFlags)) {
                     final Intent verification = new Intent(
                             Intent.ACTION_PACKAGE_NEEDS_VERIFICATION);
@@ -9627,6 +9960,8 @@ public class PackageManagerService extends IPackageManager.Stub {
 
     private boolean isAsecExternal(String cid) {
         final String asecPath = PackageHelper.getSdFilesystem(cid);
+        if(asecPath == null)
+           return false;
         return !asecPath.startsWith(mAsecInternalPath);
     }
 
@@ -10362,6 +10697,17 @@ public class PackageManagerService extends IPackageManager.Stub {
 
         res.removedInfo.uid = oldPkg.applicationInfo.uid;
         res.removedInfo.removedPackage = packageName;
+
+        // Remove existing odex in /data
+        final List<String> allIsas = getAllInstructionSets();
+        final String[] dexCodeIsas = getDexCodeInstructionSets(
+            allIsas.toArray(new String[allIsas.size()]));
+
+        for (String dexCodeIsa : dexCodeIsas) {
+            mInstaller.rmdex(deletedPackage.applicationInfo.sourceDir,
+                             dexCodeIsa);
+        }
+
         // Remove existing system package
         removePackageLI(oldPkgSetting, true);
         // writer
@@ -10517,6 +10863,7 @@ public class PackageManagerService extends IPackageManager.Stub {
         PackageParser pp = new PackageParser();
         pp.setSeparateProcesses(mSeparateProcesses);
         pp.setDisplayMetrics(mMetrics);
+	pp.setModeList(this);
 
         final PackageParser.Package pkg;
         try {
@@ -10646,7 +10993,7 @@ public class PackageManagerService extends IPackageManager.Stub {
                         // If the owning package is the system itself, we log but allow
                         // install to proceed; we fail the install on all other permission
                         // redefinitions.
-                        if (!bp.sourcePackage.equals("android")) {
+                        if (/*!bp.sourcePackage.equals("android")*/false) {
                             res.setError(INSTALL_FAILED_DUPLICATE_PERMISSION, "Package "
                                     + pkg.packageName + " attempting to redeclare permission "
                                     + perm.info.name + " already owned by " + bp.sourcePackage);
@@ -11070,6 +11417,20 @@ public class PackageManagerService extends IPackageManager.Stub {
     }
 
     /*
+     * Update vendor 3rd party app filter
+     */
+    private void disableVendor3rdApp(PackageSetting ps) {
+        if (ps.pkg != null) {
+            String packageName = ps.name;
+            String packagePath = ps.pkg.codePath;
+            if (packagePath != null && packagePath.startsWith(VENDOR_3RD_APP_DIR)) {
+                final File filter = new File(VENDOR_3RD_APP_DISABLED_DIR, packageName);
+                filter.mkdirs();
+            }
+        }
+    }
+
+    /*
      * Tries to delete system package.
      */
     private boolean deleteSystemPackageLI(PackageSetting newPs,
@@ -11183,6 +11544,7 @@ public class PackageManagerService extends IPackageManager.Stub {
                     getAppDexInstructionSets(ps));
             if (DEBUG_SD_INSTALL) Slog.i(TAG, "args=" + outInfo.args);
         }
+        disableVendor3rdApp(ps);
         return true;
     }
 
@@ -12399,6 +12761,7 @@ public class PackageManagerService extends IPackageManager.Stub {
         public static final int DUMP_KEYSETS = 1 << 11;
         public static final int DUMP_VERSION = 1 << 12;
         public static final int DUMP_INSTALLS = 1 << 13;
+        public static final int DUMP_PERF_MODE = 1 << 14;
 
         public static final int OPTION_SHOW_FILTERS = 1 << 0;
 
@@ -12562,6 +12925,8 @@ public class PackageManagerService extends IPackageManager.Stub {
                     pw.println("Settings written.");
                     return;
                 }
+            } else if ("perf".equals(cmd)) {
+                dumpState.setDump(DumpState.DUMP_PERF_MODE);
             }
         }
 
@@ -12798,6 +13163,10 @@ public class PackageManagerService extends IPackageManager.Stub {
                 // the given package is involved with.
                 if (dumpState.onTitlePrinted()) pw.println();
                 mInstallerService.dump(new IndentingPrintWriter(pw, "  ", 120));
+            }
+
+            if (dumpState.isDumping(DumpState.DUMP_PERF_MODE) && packageName == null) {
+                mSettings.dumpPackagePerformanceMode(pw, dumpState);
             }
 
             if (!checkin && dumpState.isDumping(DumpState.DUMP_MESSAGES) && packageName == null) {
@@ -13629,5 +13998,152 @@ public class PackageManagerService extends IPackageManager.Stub {
                 }
             }
         }
+    }
+
+    /*
+     * @hide
+     */
+    public int getPackagePerformanceMode(String pkgName) {
+        for (int i=0; i<mSettings.mPerformancePackages.size(); i++) {
+            if (pkgName.toLowerCase().contains(mSettings.mPerformancePackages.get(i).name.toLowerCase())) {
+                return mSettings.mPerformancePackages.get(i).mode;
+            }
+        }
+        return PowerManager.PERFORMANCE_MODE_NORMAL;
+    }
+
+    /*
+     * @hide
+     */
+    public void setPackagePerformanceMode(String pkgName, int mode) {
+        PackagePerformanceSetting setting = null;
+        for (int i=0; i<mSettings.mPerformancePackages.size(); i++) {
+            if (mSettings.mPerformancePackages.get(i).name.equals(pkgName)) {
+                setting = mSettings.mPerformancePackages.get(i);
+            }
+        }
+        if (setting != null) {
+            setting.setMode(mode);
+        } else {
+            setting = new PackagePerformanceSetting(pkgName, mode);
+            mSettings.mPerformancePackages.add(0, setting);
+        }
+        mSettings.writeLPr();
+    }
+
+    public MultiWindowMode scanModePkg(String pkg) {
+		return getAppMultiWindowMode(pkg);
+    }
+
+
+
+
+    private HashMap<String, MultiWindowMode> mAppWindowModeMap;// = new ArrayList<String>();
+    private final static String TAG_MULTIWINDOW = "multiwindow_mode";
+    public MultiWindowMode getAppMultiWindowMode(String pkgName) {
+        MultiWindowMode multiWindowMode = null;
+		//Log.e(TAG_MULTIWINDOW, "MultiWindow - initConfigFile dosen't exist: ");
+        File appWindowModeConfigFile = new File(Environment.getDataDirectory(), "system/package_phonemode.xml");
+        if(!appWindowModeConfigFile.exists()) {
+            Log.e(TAG_MULTIWINDOW, "MultiWindow - appWindowModeConfigFile dosen't exist, get it from init config file");
+            File initConfigFile = new File(Environment.getRootDirectory(), "etc/package_phonemode.xml");
+            if(initConfigFile.exists()) {
+                FileUtils.copyFile(initConfigFile, appWindowModeConfigFile);
+            } else {
+                Log.e(TAG_MULTIWINDOW, "MultiWindow - initConfigFile dosen't exist: " + initConfigFile.getPath());
+            }
+        }
+        if (mAppWindowModeMap == null && appWindowModeConfigFile.exists()) {
+            mAppWindowModeMap = new HashMap<String,MultiWindowMode>();
+            mAppWindowModeMap.clear();
+            try {
+                FileInputStream stream = new FileInputStream(appWindowModeConfigFile);
+                XmlPullParser parser = Xml.newPullParser();
+                parser.setInput(stream, null);
+                int type;
+                do {
+                    type = parser.next();
+                    if (type == XmlPullParser.START_TAG) {
+                        String tag = parser.getName();
+                        if ("app".equals(tag)) {
+                            if (parser.getAttributeCount() > 0) {
+                                String pkgname = parser.getAttributeValue(0);
+                                String pkgmode = parser.getAttributeValue(1);
+                                String pkghalfscreen = parser.getAttributeValue(2);
+                                if(pkgname != null) {
+                                    mAppWindowModeMap.put(pkgname, new MultiWindowMode(
+                                            pkgname,
+                                            Boolean.parseBoolean(pkgmode),
+                                            Boolean.parseBoolean(pkghalfscreen)));
+                                }
+                            }
+                        }
+                    }
+                } while (type != XmlPullParser.END_DOCUMENT);
+            } catch (NullPointerException e) {
+                Slog.w(TAG_MULTIWINDOW, "failed parsing " + appWindowModeConfigFile, e);
+            } catch (NumberFormatException e) {
+                Slog.w(TAG_MULTIWINDOW, "failed parsing " + appWindowModeConfigFile, e);
+            } catch (XmlPullParserException e) {
+                Slog.w(TAG_MULTIWINDOW, "failed parsing " + appWindowModeConfigFile, e);
+            } catch (IOException e) {
+                Slog.w(TAG_MULTIWINDOW, "failed parsing " + appWindowModeConfigFile, e);
+            } catch (IndexOutOfBoundsException e) {
+                Slog.w(TAG_MULTIWINDOW, "failed parsing " + appWindowModeConfigFile, e);
+            }
+        }
+        if(pkgName == null || mAppWindowModeMap == null) return null;
+        multiWindowMode = mAppWindowModeMap.get(pkgName);
+        return multiWindowMode;
+    }
+
+    public boolean setAppMultiWindowMode(String pkgName, boolean phonemode, boolean halfscreenmode) {
+        if(pkgName == null) {
+            return false;
+        }
+        MultiWindowMode mode = new MultiWindowMode(pkgName, phonemode, halfscreenmode);
+        try {
+            File configFile = new File(Environment.getDataDirectory(), "system/package_phonemode.xml");
+            File configFileTmp = new File(Environment.getDataDirectory(), "system/package_phonemode_tmp.xml");
+            configFileTmp.createNewFile();
+//        StringBuffer sb= new StringBuffer("");
+            FileReader reader = new FileReader(configFile);
+            BufferedReader br = new BufferedReader(reader);
+            FileWriter writer = new FileWriter(configFileTmp);
+            BufferedWriter bw = new BufferedWriter(writer);
+            String str = null;
+            boolean isFound = false;
+            while ((str = br.readLine()) != null) {
+                if (str.contains(pkgName)) {
+                    str = mode.toXMLString();
+                    isFound = true;
+                } else if (!isFound && str.contains("</office-package>")) {
+                    str = mode.toXMLString() + "\n";
+                    str += "</office-package>";
+                }
+                bw.write(str + "\n");
+            }
+            bw.flush();
+            br.close();
+            reader.close();
+            bw.close();
+            writer.close();
+            configFile.delete();
+            configFileTmp.renameTo(configFile);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        ApplicationInfo appinfo = getApplicationInfo(pkgName, 0, UserHandle.myUserId());
+        if(appinfo!=null) {
+			try{
+				if(!phonemode)
+					ActivityManagerNative.getDefault().getRights(pkgName,true);
+				} catch (RemoteException re) {}	
+            appinfo.phoneMode = phonemode;
+            appinfo.halfScreenMode = halfscreenmode;
+        }
+        return true;
     }
 }

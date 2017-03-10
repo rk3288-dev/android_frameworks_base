@@ -54,6 +54,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import  java.io.File;
 
 /**
  * Startup class for the zygote process.
@@ -71,6 +72,9 @@ public class ZygoteInit {
     private static final String TAG = "Zygote";
 
     private static final String PROPERTY_DISABLE_OPENGL_PRELOADING = "ro.zygote.disable_gl_preload";
+    private static final String PROPERTY_FIRST_TIME_BOOTING = "persist.sys.first_booting";
+
+	private static final String CHECK_OTA_BOOTING = "/cache/recovery/last_ota_flag";
 
     private static final String ANDROID_SOCKET_PREFIX = "ANDROID_SOCKET_";
 
@@ -250,6 +254,25 @@ public class ZygoteInit {
             Log.e(TAG, "setregid() failed. errno: " + errno);
         }
     }
+	/*
+	*	sometimes ota update system resource,and this op need preload resource at ota firt booting.
+	*/
+
+	static boolean checkIsOtaBoot() {
+        try {
+            File f = new File(CHECK_OTA_BOOTING);
+            if(!f.exists()) {
+                Log.e(TAG, "checkIsOtaBoot result: this time is a normal booting" );
+                return false;
+            }
+            f.delete();
+        } catch (Exception e) {
+            return false;
+        }
+		SystemProperties.set("persist.sys.ota_booting", "true");
+        Log.e(TAG, "checkIsOtaBoot result: this time is a ota booting, delete the ota flag file");
+        return true;
+	}
 
     static void preload() {
         Log.d(TAG, "begin preload");
@@ -261,7 +284,25 @@ public class ZygoteInit {
         // for memory sharing purposes.
         WebViewFactory.prepareWebViewInZygote();
         Log.d(TAG, "end preload");
+
+        /*mPreloadThread.setPriority(2);
+        mPreloadThread.start();
+        //mPreloadThread.join();*/
     }
+
+    private static Thread mPreloadThread = new Thread(new Runnable() {
+        @Override
+        public void run() {
+            //sleep(2000);
+            Log.d(TAG, "start thread preload");
+            preloadClasses();
+            preloadResources();
+            preloadOpenGL();
+            preloadSharedLibraries();
+            WebViewFactory.prepareWebViewInZygote();
+            Log.d(TAG, "end thread preload");
+        }
+    });
 
     private static void preloadSharedLibraries() {
         Log.i(TAG, "Preloading shared libraries...");
@@ -668,13 +709,22 @@ public class ZygoteInit {
             if (abiList == null) {
                 throw new RuntimeException("No ABI list supplied.");
             }
+	    registerZygoteSocket(socketName);
 
-            registerZygoteSocket(socketName);
-            EventLog.writeEvent(LOG_BOOT_PROGRESS_PRELOAD_START,
-                SystemClock.uptimeMillis());
-            preload();
-            EventLog.writeEvent(LOG_BOOT_PROGRESS_PRELOAD_END,
-                SystemClock.uptimeMillis());
+
+            // Finish profiling the zygote initialization.
+            boolean isFirstBooting = false;
+            //if first time booting or zygote restart or data encrypted,we need preload full class
+            //add ota booting check, sometimes ota could add more resource. 
+            if(Process.myPid() > 300 || checkIsOtaBoot()||SystemProperties.getBoolean(PROPERTY_FIRST_TIME_BOOTING, true)|| SystemProperties.get("ro.crypto.state").equals("encrypted")){
+            	EventLog.writeEvent(LOG_BOOT_PROGRESS_PRELOAD_START,
+            		SystemClock.uptimeMillis());
+                preload();
+                isFirstBooting = true;
+                EventLog.writeEvent(LOG_BOOT_PROGRESS_PRELOAD_END,
+                	SystemClock.uptimeMillis());
+            }
+
 
             // Finish profiling the zygote initialization.
             SamplingProfilerIntegration.writeZygoteSnapshot();
@@ -691,6 +741,16 @@ public class ZygoteInit {
             }
 
             Log.i(TAG, "Accepting command socket connections");
+
+	    //not first boot
+            if(!isFirstBooting){
+            	EventLog.writeEvent(LOG_BOOT_PROGRESS_PRELOAD_START,
+            		SystemClock.uptimeMillis());
+                preload();
+                EventLog.writeEvent(LOG_BOOT_PROGRESS_PRELOAD_END,
+                	SystemClock.uptimeMillis());
+                gc();
+            }
             runSelectLoop(abiList);
 
             closeServerSocket();

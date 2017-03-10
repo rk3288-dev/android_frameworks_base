@@ -49,6 +49,12 @@ import com.android.server.pm.PackageManagerService;
 
 import android.util.Log;
 import android.view.WindowManager;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+
 
 public final class ShutdownThread extends Thread {
     // constants
@@ -68,6 +74,7 @@ public final class ShutdownThread extends Thread {
     
     private static boolean mReboot;
     private static boolean mRebootSafeMode;
+    private static boolean mRebootSwitchSystem;
     private static String mRebootReason;
 
     // Provides shutdown assurance in case the system_server is killed
@@ -108,6 +115,7 @@ public final class ShutdownThread extends Thread {
     public static void shutdown(final Context context, boolean confirm) {
         mReboot = false;
         mRebootSafeMode = false;
+        mRebootSwitchSystem = false;
         shutdownInner(context, confirm);
     }
 
@@ -127,7 +135,7 @@ public final class ShutdownThread extends Thread {
                 ? com.android.internal.R.string.reboot_safemode_confirm
                 : (longPressBehavior == 2
                         ? com.android.internal.R.string.shutdown_confirm_question
-                        : com.android.internal.R.string.shutdown_confirm);
+                        : (mReboot ? com.android.internal.R.string.reboot_confirm : com.android.internal.R.string.shutdown_confirm));
 
         Log.d(TAG, "Notifying thread to start shutdown longPressBehavior=" + longPressBehavior);
 
@@ -139,7 +147,8 @@ public final class ShutdownThread extends Thread {
             sConfirmDialog = new AlertDialog.Builder(context)
                     .setTitle(mRebootSafeMode
                             ? com.android.internal.R.string.reboot_safemode_title
-                            : com.android.internal.R.string.power_off)
+                             : (mReboot ? com.android.internal.R.string.reboot : 
+                            com.android.internal.R.string.power_off))
                     .setMessage(resourceId)
                     .setPositiveButton(com.android.internal.R.string.yes, new DialogInterface.OnClickListener() {
                         public void onClick(DialogInterface dialog, int which) {
@@ -178,6 +187,15 @@ public final class ShutdownThread extends Thread {
         }
     }
 
+
+    // add the firefly sleep
+    public static void goToSleep(Context context,long time){
+        context.enforceCallingOrSelfPermission(android.Manifest.permission.DEVICE_POWER, null);
+        PowerManager pm = (PowerManager)context.getSystemService(Context.POWER_SERVICE);
+        pm.goToSleep(SystemClock.uptimeMillis());
+    }
+ 
+
     /**
      * Request a clean shutdown, waiting for subsystems to clean up their
      * state etc.  Must be called from a Looper thread in which its UI
@@ -190,9 +208,22 @@ public final class ShutdownThread extends Thread {
     public static void reboot(final Context context, String reason, boolean confirm) {
         mReboot = true;
         mRebootSafeMode = false;
+        mRebootSwitchSystem = false;
         mRebootReason = reason;
         shutdownInner(context, confirm);
     }
+    
+      
+    public static void rebootSwitchSystem(final Context context, String reason, boolean confirm) {
+	SystemProperties.set("ctl.start", "boot_linux");
+
+	mReboot = true;
+	mRebootSafeMode = false;
+	mRebootSwitchSystem = true;
+	mRebootReason = reason;
+	shutdownInner(context, confirm);
+    }
+
 
     /**
      * Request a reboot into safe mode.  Must be called from a Looper thread in which its UI
@@ -204,6 +235,7 @@ public final class ShutdownThread extends Thread {
     public static void rebootSafeMode(final Context context, boolean confirm) {
         mReboot = true;
         mRebootSafeMode = true;
+        mRebootSwitchSystem = false;
         mRebootReason = null;
         shutdownInner(context, confirm);
     }
@@ -220,8 +252,18 @@ public final class ShutdownThread extends Thread {
         // throw up an indeterminate system dialog to indicate radio is
         // shutting down.
         ProgressDialog pd = new ProgressDialog(context);
-        pd.setTitle(context.getText(com.android.internal.R.string.power_off));
-        pd.setMessage(context.getText(com.android.internal.R.string.shutdown_progress));
+        if(mReboot) {
+            if(mRebootSwitchSystem == true) {
+                pd.setTitle(context.getText(com.android.internal.R.string.global_action_firefly_switch_system));
+                pd.setMessage(context.getText(com.android.internal.R.string.global_action_firefly_switch_system_progress));
+            } else {
+                pd.setTitle(context.getText(com.android.internal.R.string.factorytest_reboot));
+                pd.setMessage(context.getText(com.android.internal.R.string.factorytest_reboot));
+            }
+        } else {
+            pd.setTitle(context.getText(com.android.internal.R.string.power_off));
+            pd.setMessage(context.getText(com.android.internal.R.string.shutdown_progress));
+        }
         pd.setIndeterminate(true);
         pd.setCancelable(false);
         pd.getWindow().setType(WindowManager.LayoutParams.TYPE_KEYGUARD_DIALOG);

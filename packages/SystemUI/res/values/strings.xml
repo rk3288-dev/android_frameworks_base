@@ -17,6 +17,36 @@
  */
 -->
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+
+    <string name="app_type_all">AllApp</string>
+    <string name="app_type_system">SYSTEM</string>
+    <string name="app_type_office">OFFICE</string>
+    <string name="app_type_game">GAME</string>
+    <string name="app_type_media">SOCIAL</string>
+    <string name="app_type_other">OTHER</string>
+    <string name="default_account_name">ROCKCHIP</string>
+
+    <string name="week_monday">Mon.</string>
+    <string name="week_tuesday">Tues.</string>
+    <string name="week_wednesday">Wed.</string>
+    <string name="week_thurday ">Thur.</string>
+    <string name="week_friday">Fri.</string>
+    <string name="week_saturday">Sat.</string>
+    <string name="week_sunday">Sun.</string>
+
+    <string-array name="custom_weekdays">
+        <item>Sun.</item>
+        <item>Mon.</item>
+        <item>Tues.</item>
+        <item>Wed.</item>
+        <item>Thur.</item>
+        <item>Fri.</item>
+        <item>Sat.</item>
+    </string-array>
+    
+    <string name="drag_and_drop_ended">APP:%1$s is added to Desktop! </string>
+    <string name="notification_center">Notification Center</string>
+
     <!-- Name of the status bar as seen in the applications info settings page. [CHAR LIMIT=12] -->
     <string name="app_label">System UI</string>
 
@@ -497,6 +527,41 @@
         No Internet connection
     </string>
 
+	    
+	
+    <!-- $_rbox_$_modify_$_chenxiao begin,usb unmount msg -->
+    <!-- SD card eject confirmation dialog title   [CHAR LIMIT=25] -->
+    <string name="dlg_confirm_unmount_title" product="nosdcard">Unmount USB storage?</string>
+    <!-- SD card eject confirmation dialog title   -->
+    <string name="dlg_confirm_unmount_title" product="default">Unmount storage?</string>
+	<!-- SD card eject confirmation dialog  [CHAR LIMIT=NONE] -->
+    <string name="dlg_confirm_unmount_text" product="nosdcard">If you unmount the USB storage, some apps you are using will stop and may be unavailable until you remount the USB storage.</string>
+    <!-- SD card eject confirmation dialog  -->
+    <string name="dlg_confirm_unmount_text" product="default">If you unmount the storage, some apps you are using will stop and may be unavailable until you remount the storage.</string>
+    <!-- SD card eject error dialog title   [CHAR LIMIT=30] -->
+    <string name="dlg_error_unmount_title" product="nosdcard"></string>
+    <!-- SD card eject error dialog title   -->
+    <string name="dlg_error_unmount_title" product="default"></string>
+    <!-- SD card eject error dialog text   [CHAR LIMIT=NONE] -->
+    <string name="dlg_error_unmount_text" product="nosdcard">Couldn\'t unmount USB storage. Try again later.</string>
+    <!-- SD card eject error dialog text   -->
+    <string name="dlg_error_unmount_text" product="default">Couldn\'t unmount storage. Try again later.</string>
+    <!-- SD card unmount informative text   [CHAR LIMIT=NONE] -->
+    <string name="unmount_inform_text" product="nosdcard">USB storage will be unmounted.</string>
+    <!-- SD card unmount informative text   [CHAR LIMIT=NONE] -->
+    <string name="unmount_inform_text" product="default">Storage will be unmounted.</string>
+
+
+        <!--screen shot-->
+           <string name="sdcard_unmount">internal storage is unmount</string>
+           <string name="external_sd_unmount">sd card is unmount</string>
+           <string name="usb_storage_unmount">usb storage is unmount</string> 
+
+       <!-- $_rbox_$_modify_$_chenxiao begin,hide bar msg -->
+        <string name="hidebar_msg">"System Bar has hidden\nyou can swipe from the bottom of screen to show it again. "</string>
+        
+        <string name="cleartasks_msg">"Already clear background tasks"</string>
+
     <!-- Text to display underneath the graphical signal strength meter when
          it is displaying Wi-Fi status and Wi-Fi is connected to a network
          whose SSID is not available.
@@ -916,4 +981,26 @@
 
     <!-- Hide quick settings tile confirmation button -->
     <string name="quick_settings_reset_confirmation_button">Hide</string>
+      <string name="quick_settings_cutimage_device_label">cut image</string>
+    <string name="accessibility_desc_app_bar">App Bar.</string>
+     <string name="popuwindow_close_app">CLOSE APP</string>
+    <string name="popuwindow_lock_app">UNLOCK</string>
+    
+      <string name="config_multi_dialog_title">Please select</string>
+    <string name="navbar_popupmenu_windowmode">APP MODE</string>
+    <string name="navbar_popupmenu_pad_mode">PAD</string>
+    <string name="navbar_popupmenu_phone_mode">PHONE</string>
+    <string name="navbar_popupmenu_splite_mode">SPLIT</string>
+    
+    <string name="comment_text">Comment mode</string>
+    <string name="multishot_text">Static shot</string>
+    <string name="dynamic_text">Dynamic shot</string>
+    <string name="fullshot_text">Whole shot</string>
+    
+    <string name="fail_open_app">Open App Fail...</string>
+    <string name="restart_app_msg">Restarting App...</string>
+
+    <string name="power_sub_close">Shutdown</string>
+    <string name="power_sub_sleep">Go to Sleep</string>
+    <string name="power_sub_reboot">Reboot</string>
 </resources>

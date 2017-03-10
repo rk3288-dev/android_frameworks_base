@@ -117,8 +117,13 @@
     <integer name="quick_settings_user_time_settings_tile_span">1</integer>
 
     <!-- The default tiles to display in QuickSettings -->
-    <string name="quick_settings_tiles_default" translatable="false">
+    <string name="quick_settings_tiles_default_bt" translatable="false">
         wifi,bt,inversion,cell,airplane,rotation,flashlight,location,cast,hotspot
+    </string>
+ 
+    <!-- The default tiles to display in QuickSettings -->
+    <string name="quick_settings_tiles_default" translatable="false">
+        wifi,inversion,cell,airplane,rotation,flashlight,location,cast,hotspot
     </string>
 
     <!-- The tiles to display in QuickSettings -->
@@ -141,6 +146,9 @@
 
     <!-- milliseconds before the heads up notification auto-dismisses. -->
     <integer name="heads_up_notification_decay">10000</integer>
+    
+    <!--For MultiWindow mode: milliseconds before the heads up notification auto-dismisses. -->    
+    <integer name="heads_up_notification_decay_win">2000</integer>
 
     <!-- milliseconds after a heads up notification is pushed back
      before the app can interrupt again. -->
@@ -295,5 +303,15 @@
 
     <!-- Enable the default volume dialog -->
     <bool name="enable_volume_ui">true</bool>
+
+    <!-- The default tiles to display in QuickSettings for dsds-->
+    <string name="quick_settings_tiles_default_bt_dualsim" translatable="false">
+        wifi,bt,inversion,cell,cell2,airplane,rotation,flashlight,location,cast,hotspot
+    </string>
+
+    <!-- The default tiles to display in QuickSettings for dsds-->
+    <string name="quick_settings_tiles_default_dualsim" translatable="false">
+        wifi,inversion,cell,cell2,airplane,rotation,flashlight,location,cast,hotspot
+    </string>
 </resources>
 

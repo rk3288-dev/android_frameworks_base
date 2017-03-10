@@ -100,9 +100,20 @@ public class PhoneStatusBarPolicy {
             else if (action.equals(TelecomManager.ACTION_CURRENT_TTY_MODE_CHANGED)) {
                 updateTTY(intent);
             }
+			else if (action.equals(Intent.ACTION_HEADSET_PLUG)) {
+		        updateHeadset(intent);
+		    }
             else if (action.equals(Intent.ACTION_USER_SWITCHED)) {
                 updateAlarm();
             }
+        }
+    };
+
+    private Runnable mRemoveCastIconRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (DEBUG) Log.v(TAG, "updateCast: hiding icon NOW");
+            mService.setIconVisibility(SLOT_CAST, false);
         }
     };
 
@@ -123,6 +134,7 @@ public class PhoneStatusBarPolicy {
         filter.addAction(TelephonyIntents.ACTION_SIM_STATE_CHANGED);
         filter.addAction(TelecomManager.ACTION_CURRENT_TTY_MODE_CHANGED);
         filter.addAction(Intent.ACTION_USER_SWITCHED);
+		filter.addAction(Intent.ACTION_HEADSET_PLUG);
         mContext.registerReceiver(mIntentReceiver, filter, null, mHandler);
 
         // TTY status
@@ -163,12 +175,27 @@ public class PhoneStatusBarPolicy {
         mService.setIcon(SLOT_HOTSPOT, R.drawable.stat_sys_hotspot, 0, null);
         mService.setIconVisibility(SLOT_HOTSPOT, mHotspot.isHotspotEnabled());
         mHotspot.addCallback(mHotspotCallback);
+
+		//headset
+		mService.setIcon("headset", R.drawable.stat_sys_headset, 0, null);
+		mService.setIconVisibility("headset", false ); 
     }
 
     public void setZenMode(int zen) {
         mZen = zen;
         updateVolumeZen();
     }
+
+	private final void updateHeadset(Intent intent) {
+                int hasMicrophone=intent.getIntExtra("microphone",0);
+                if(hasMicrophone==1){
+                   mService.setIcon("headset", R.drawable.stat_sys_headset, 0, null);
+                }else{
+                   mService.setIcon("headset", R.drawable.stat_sys_headset_no_microphone, 0, null);
+                }
+		Log.v(TAG, "updateHeadset: state=" + intent.getIntExtra("state" , 0)+" hasMicrophone="+hasMicrophone);
+		mService.setIconVisibility("headset", (intent.getIntExtra("state" , 0 ) == 1 )?true :false ); 
+	}
 
     private void updateAlarm() {
         AlarmManager alarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
@@ -304,11 +331,17 @@ public class PhoneStatusBarPolicy {
             }
         }
         if (DEBUG) Log.v(TAG, "updateCast: isCasting: " + isCasting);
+        mHandler.removeCallbacks(mRemoveCastIconRunnable);
         if (isCasting) {
             mService.setIcon(SLOT_CAST, R.drawable.stat_sys_cast, 0,
                     mContext.getString(R.string.accessibility_casting));
+            mService.setIconVisibility(SLOT_CAST, true);
+        } else {
+            // don't turn off the screen-record icon for a few seconds, just to make sure the user
+            // has seen it
+            if (DEBUG) Log.v(TAG, "updateCast: hiding icon in 3 sec...");
+            mHandler.postDelayed(mRemoveCastIconRunnable, 3000);
         }
-        mService.setIconVisibility(SLOT_CAST, isCasting);
     }
 
     private final HotspotController.Callback mHotspotCallback = new HotspotController.Callback() {

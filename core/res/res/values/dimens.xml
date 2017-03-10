@@ -30,8 +30,11 @@
          showAsAction="ifRoom" items can fit. "always" items can override this. -->
     <integer name="max_action_buttons">2</integer>
     <dimen name="toast_y_offset">64dip</dimen>
+    <!--Width of the app window bounds used by multi-window/half-screen-->
+    <dimen name="app_window_bounds_width">8dip</dimen>
     <!-- Height of the status bar -->
     <dimen name="status_bar_height">25dip</dimen>
+    <dimen name="status_bar_height_mul">0dip</dimen>
     <!-- Height of the bottom navigation / system bar. -->
     <dimen name="navigation_bar_height">48dp</dimen>
     <!-- Height of the bottom navigation bar in portrait; often the same as @dimen/navigation_bar_height -->

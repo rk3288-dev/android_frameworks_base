@@ -27,6 +27,8 @@ import java.util.List;
 
 import libcore.util.Objects;
 
+import android.os.SystemProperties;
+
 /**
  * Describes how a logical display is configured.
  * <p>
@@ -63,7 +65,7 @@ final class LogicalDisplay {
     private final int mDisplayId;
     private final int mLayerStack;
     private DisplayInfo mOverrideDisplayInfo; // set by the window manager
-    private DisplayInfo mInfo;
+    public DisplayInfo mInfo;
 
     // The display device that this logical display is based on and which
     // determines the base metrics that it uses.
@@ -254,8 +256,15 @@ final class LogicalDisplay {
      * @param isBlanked True if the device is being blanked.
      */
     public void configureDisplayInTransactionLocked(DisplayDevice device,
-            boolean isBlanked) {
-        final DisplayInfo displayInfo = getDisplayInfoLocked();
+            boolean isBlanked, DisplayInfo info) {
+        boolean dualconfig = false;
+        DisplayInfo displayInfo = getDisplayInfoLocked();
+	 if (SystemProperties.get("dualscreen_eable", "false").equals("true")) {
+             dualconfig= true;
+	 }
+	 if (dualconfig) {
+	 	displayInfo = info != null?info:getDisplayInfoLocked();
+ 	 }
         final DisplayDeviceInfo displayDeviceInfo = device.getDisplayDeviceInfoLocked();
 
         // Set the layer stack.

@@ -2305,9 +2305,18 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
             loadBooleanSetting(stmt, Settings.System.DIM_SCREEN,
                     R.bool.def_dim_screen);
-            loadIntegerSetting(stmt, Settings.System.SCREEN_OFF_TIMEOUT,
-                    R.integer.def_screen_off_timeout);
+	    //add for factory as ro.rk.screenoff_time
+            loadSetting(stmt, Settings.System.SCREEN_OFF_TIMEOUT,
+                     SystemProperties.getInt("ro.rk.screenoff_time", mContext.getResources().getInteger(R.integer.def_screen_off_timeout)));
 
+            loadSetting(stmt, Settings.System.HIDE_ROTATION_LOCK_TOGGLE_FOR_ACCESSIBILITY,
+                     "1");
+            // Set default button lights settings
+            loadBooleanSetting(stmt,Settings.System.BUTTON_LIGHTS_ENABLED,
+                    R.bool.def_button_lights_enabled);
+            loadIntegerSetting(stmt, Settings.System.BUTTON_LIGHTS_OFF_TIMEOUT,
+                    R.integer.def_button_lights_off_timeout);
+			
             // Set default cdma DTMF type
             loadSetting(stmt, Settings.System.DTMF_TONE_TYPE_WHEN_DIALING, 0);
 
@@ -2316,9 +2325,47 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
             // Set default tty mode
             loadSetting(stmt, Settings.System.TTY_MODE, 0);
+            loadBooleanSetting(stmt, Settings.System.SCREENSHOT_BUTTON_SHOW,
+                    R.bool.def_screenshot_button_show);
+                    
+            loadBooleanSetting(stmt, Settings.System.SYSTEMBAR_HIDE,
+                    R.bool.def_systembar_hide);
 
-            loadIntegerSetting(stmt, Settings.System.SCREEN_BRIGHTNESS,
-                    R.integer.def_screen_brightness);
+            String enableUms= SystemProperties.get("ro.factory.hasUMS","false");
+            if("true".equals(enableUms))//if has UMS function,flash is primary storage
+            {
+               loadSetting(stmt,Settings.System.SCREENSHOT_LOCATION,"/mnt/internal_sd");
+            }else{
+                  loadSetting(stmt,Settings.System.SCREENSHOT_LOCATION,"/storage/emulated");
+            }
+	    //add for factory as ro.rk.def_brightness
+	    loadSetting(stmt, Settings.System.SCREEN_BRIGHTNESS,
+		    SystemProperties.getInt("ro.rk.def_brightness", mContext.getResources().getInteger(R.integer.def_screen_brightness)));
+			loadBooleanSetting(stmt, Settings.System.MULTI_WINDOW_BUTTON_SHOW,
+					R.bool.def_multi_window_button_show);
+			loadBooleanSetting(stmt, Settings.System.MULTI_WINDOW_USED,
+					R.bool.def_multi_window_used);
+			loadBooleanSetting(stmt, Settings.System.MULTI_WINDOW_CONFIG,
+					R.bool.def_multi_window_config);
+			loadBooleanSetting(stmt, Settings.System.HALF_SCREEN_WINDOW_ENABLE,
+					R.bool.def_half_screen_window_enable);
+			loadBooleanSetting(stmt, Settings.System.FOUR_SCREEN_WINDOW_ENABLE,
+					R.bool.def_four_screen_window_enable);
+
+			loadStringSetting(stmt,Settings.System.HALF_SCREEN_WINDOW_POSITION,
+                    R.string.def_half_screen_window_position); 
+			
+			loadStringSetting(stmt,Settings.System.FOUR_SCREEN_WINDOW_POSITION,
+                    R.string.def_four_screen_window_position);
+			
+			//loadStringSetting(stmt,Settings.System.FOUR_SCREEN_WINDOW_H_POSITION,
+            //        R.string.def_four_screen_window_h_position);
+			
+			loadIntegerSetting(stmt, Settings.System.HALF_SCREEN_APP_LOCATION,
+					R.integer.def_half_screen_app_location);
+			
+			loadIntegerSetting(stmt, Settings.System.MULITI_WINDOW_MODE,
+                    R.integer.def_multi_window_mode); 
 
             loadBooleanSetting(stmt, Settings.System.SCREEN_BRIGHTNESS_MODE,
                     R.bool.def_screen_brightness_automatic_mode);
@@ -2372,8 +2419,17 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             stmt = db.compileStatement("INSERT OR IGNORE INTO secure(name,value)"
                     + " VALUES(?,?);");
 
-            loadStringSetting(stmt, Settings.Secure.LOCATION_PROVIDERS_ALLOWED,
+	    String hasGPS = SystemProperties.get("ro.factory.hasGPS");
+	    if("true".equals(hasGPS))
+	    {
+            	loadStringSetting(stmt, Settings.Secure.LOCATION_PROVIDERS_ALLOWED,
                     R.string.def_location_providers_allowed);
+	    }
+	    else
+	    {
+                loadStringSetting(stmt, Settings.Secure.LOCATION_PROVIDERS_ALLOWED,
+                    R.string.def_location_providers_allowed_network);
+	    }
 
             String wifiWatchList = SystemProperties.get("ro.com.android.wifi-watchlist");
             if (!TextUtils.isEmpty(wifiWatchList)) {
@@ -2490,6 +2546,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             // --- Previously in 'system'
             loadBooleanSetting(stmt, Settings.Global.AIRPLANE_MODE_ON,
                     R.bool.def_airplane_mode_on);
+               
+            loadStringSetting(stmt, Settings.Global.NTP_SERVER,
+                    R.string.def_ntp_server);
 
             loadBooleanSetting(stmt, Settings.Global.THEATER_MODE_ON,
                     R.bool.def_theater_mode_on);
@@ -2568,6 +2627,12 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
             loadBooleanSetting(stmt, Settings.Global.NETSTATS_ENABLED,
                     R.bool.def_netstats_enabled);
+
+	    //add for factory install_non_market_apps
+            loadSetting(stmt, Settings.Secure.INSTALL_NON_MARKET_APPS,
+			    "true".equalsIgnoreCase(
+				    SystemProperties.get("ro.rk.install_non_market_apps",
+					    "false")) ? 1 : 0);
 
             loadBooleanSetting(stmt, Settings.Global.USB_MASS_STORAGE_ENABLED,
                     R.bool.def_usb_mass_storage_enabled);

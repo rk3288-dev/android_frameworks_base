@@ -20,8 +20,32 @@ LOCAL_SHARED_LIBRARIES := \
 	libskia \
     libEGL \
     libGLESv1_CM \
+    libmedia \
     libgui \
-    libtinyalsa
+	libtinyalsa
+
+LOCAL_C_INCLUDES += \
+	$(call include-path-for, corecg graphics)
+
+#TARGET_CONTINUOUS_SPLASH_ENABLED := true
+ifeq ($(TARGET_CONTINUOUS_SPLASH_ENABLED),true)
+    LOCAL_CFLAGS += -DCONTINUOUS_SPLASH
+endif
+
+#TARGET_BOOTANIMATION_PRELOAD := true
+ifeq ($(TARGET_BOOTANIMATION_PRELOAD),true)
+    LOCAL_CFLAGS += -DPRELOAD_BOOTANIMATION
+endif
+
+#TARGET_BOOTANIMATION_USE_RGB565 := true
+ifeq ($(TARGET_BOOTANIMATION_USE_RGB565),true)
+    LOCAL_CFLAGS += -DUSE_565
+endif
+
+#TARGET_BOOTRING_ENABLED := true
+ifeq ($(strip $(TARGET_BOOTRING_ENABLED)),true)
+    LOCAL_CFLAGS += -DBOOTRING_ENABLED
+endif
 
 LOCAL_MODULE:= bootanimation
 

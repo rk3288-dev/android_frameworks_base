@@ -106,15 +106,20 @@ import com.android.server.LocalServices;
 import com.android.server.am.ActivityStack.ActivityState;
 import com.android.server.wm.WindowManagerService;
 
+import android.content.ContentResolver;
+import android.provider.Settings;
 
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
+import android.util.Log;
 
 public final class ActivityStackSupervisor implements DisplayListener {
+    static final String TAG = "ActivityStackSupervisor";
     static final boolean DEBUG = ActivityManagerService.DEBUG || false;
+	static final boolean DEBUG_ZJY = false;
     static final boolean DEBUG_ADD_REMOVE = DEBUG || false;
     static final boolean DEBUG_APP = DEBUG || false;
     static final boolean DEBUG_CONTAINERS = DEBUG || false;
@@ -124,6 +129,11 @@ public final class ActivityStackSupervisor implements DisplayListener {
     static final boolean DEBUG_SCREENSHOTS = DEBUG || false;
     static final boolean DEBUG_STATES = DEBUG || false;
     static final boolean DEBUG_VISIBLE_BEHIND = DEBUG || false;
+	private void LOGD(String msg){
+        if(DEBUG_ZJY){
+           Slog.v(TAG,"+++++++++++++++++++++++"+msg);
+        }	
+	}
 
     public static final int HOME_STACK_ID = 0;
 
@@ -150,6 +160,7 @@ public final class ActivityStackSupervisor implements DisplayListener {
     static final int CONTAINER_CALLBACK_TASK_LIST_EMPTY = FIRST_SUPERVISOR_STACK_MSG + 11;
     static final int CONTAINER_TASK_LIST_EMPTY_TIMEOUT = FIRST_SUPERVISOR_STACK_MSG + 12;
     static final int LAUNCH_TASK_BEHIND_COMPLETE = FIRST_SUPERVISOR_STACK_MSG + 13;
+    static final int LAUNCH_APP_START = FIRST_SUPERVISOR_STACK_MSG + 14;
 
     private final static String VIRTUAL_DISPLAY_BASE_NAME = "ActivityViewVirtualDisplay";
 
@@ -234,6 +245,8 @@ public final class ActivityStackSupervisor implements DisplayListener {
      * setWindowManager is called. **/
     private boolean mLeanbackOnlyDevice;
 
+    PowerManager mPm;
+
     /**
      * We don't want to allow the device to go to sleep while in the process
      * of launching an activity.  This is primarily to allow alarm intent
@@ -308,10 +321,10 @@ public final class ActivityStackSupervisor implements DisplayListener {
      * initialized.  So we initialize our wakelocks afterwards.
      */
     void initPowerManagement() {
-        PowerManager pm = (PowerManager)mService.mContext.getSystemService(Context.POWER_SERVICE);
-        mGoingToSleep = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ActivityManager-Sleep");
+        mPm = (PowerManager)mService.mContext.getSystemService(Context.POWER_SERVICE);
+        mGoingToSleep = mPm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ActivityManager-Sleep");
         mLaunchingActivity =
-                pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ActivityManager-Launch");
+                mPm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ActivityManager-Launch");
         mLaunchingActivity.setReferenceCounted(false);
     }
 
@@ -406,6 +419,7 @@ public final class ActivityStackSupervisor implements DisplayListener {
         }
         ActivityStack topStack = stacks.get(topNdx);
         final boolean homeInFront = topStack == mHomeStack;
+		
         if (homeInFront != toFront) {
             mLastFocusedStack = topStack;
             stacks.remove(mHomeStack);
@@ -413,6 +427,7 @@ public final class ActivityStackSupervisor implements DisplayListener {
             mFocusedStack = stacks.get(topNdx);
             if (DEBUG_STACK) Slog.d(TAG, "moveHomeTask: topStack old=" + topStack + " new="
                     + mFocusedStack);
+			putAllBehindHome();
         }
         EventLog.writeEvent(EventLogTags.AM_HOME_STACK_MOVED,
                 mCurrentUser, toFront ? 1 : 0, stacks.get(topNdx).getStackId(),
@@ -425,7 +440,24 @@ public final class ActivityStackSupervisor implements DisplayListener {
             }
         }
     }
-
+	void putAllBehindHome(){
+		if(mService.mConfiguration.enableMultiWindow()){
+                    int numDisplays = mActivityDisplays.size();
+                for (int displayNdx = 0; displayNdx < numDisplays; ++displayNdx) {
+                ArrayList<ActivityStack> stacks = mActivityDisplays.valueAt(displayNdx).mStacks;
+			for (int stackNdx = stacks.size() - 1; stackNdx >= 0; --stackNdx) {
+				ActivityStack stack = stacks.get(stackNdx);
+				ArrayList<TaskRecord> mTasks = stack.mTaskHistory;
+				for(int i = 0;i < mTasks.size();i++){
+					TaskRecord task = mTasks.get(i);
+					if(!task.isHomeTask()){
+						task.mTopOfLauncher = false;
+					}
+				}
+			}
+		}
+             }
+	}
     void moveHomeStackTaskToTop(int homeStackTaskType, String reason) {
         if (homeStackTaskType == RECENTS_ACTIVITY_TYPE) {
             mWindowManager.showRecentApps();
@@ -451,8 +483,9 @@ public final class ActivityStackSupervisor implements DisplayListener {
         }
 
         ActivityRecord r = mHomeStack.topRunningActivityLocked(null);
-        // if (r != null && (r.isHomeActivity() || r.isRecentsActivity())) {
-        if (r != null && r.isHomeActivity()) {
+		if (DEBUG_ZJY) Slog.v(TAG, "resumeHomeStackTask   r =" + r );
+        if (r != null && (r.isHomeActivity() || r.isRecentsActivity())) {
+        //if (r != null && r.isHomeActivity()) {
             mService.setFocusedActivityLocked(r, reason);
             return resumeTopActivitiesLocked(mHomeStack, prev, null);
         }
@@ -517,6 +550,12 @@ public final class ActivityStackSupervisor implements DisplayListener {
         } while (anyTaskForIdLocked(mCurTaskId) != null);
         return mCurTaskId;
     }
+
+	public ArrayList<TaskRecord> getAllTasks() {
+		if (mFocusedStack != null)
+			return mFocusedStack.getAllTasks();
+		return null;
+    	}
 
     ActivityRecord resumedAppLocked() {
         ActivityStack stack = getFocusedStack();
@@ -845,10 +884,28 @@ public final class ActivityStackSupervisor implements DisplayListener {
             throw new IllegalArgumentException("File descriptors passed in Intent");
         }
         boolean componentSpecified = intent.getComponent() != null;
+        
+        //Add by huangjc for wintask
+        if(mService.mContext.getResources().getConfiguration().enableMultiWindow()&&intent!=null&& startFlags==0){
+            Intent winintent=new Intent();
+            winintent.setAction("rk.android.wintask.SHOW");
+            if(intent.getComponent() != null){
+            winintent.putExtra("cmp", intent.getComponent().getPackageName());
+            //Log.d("wintask","start from Launcher,sendBroadcast now==cmp:"+intent.getComponent().getPackageName());
+
+            mService.mContext.sendBroadcast(winintent);
+           }
+         } //Add end
 
         // Don't modify the client's object!
         intent = new Intent(intent);
-
+        String clickapp = android.os.SystemProperties.get("launcher.click.app","false");
+      	if("true".equals(clickapp) && callingPackage.equals("com.android.launcher3") && intent.getComponent() != null){
+             final Message lockTaskMsg = Message.obtain();
+             lockTaskMsg.obj = intent.getComponent().getPackageName();
+             lockTaskMsg.what = LAUNCH_APP_START;
+              mHandler.sendMessage(lockTaskMsg);
+	}
         // Collect information about the target of the Intent.
         ActivityInfo aInfo = resolveActivity(intent, resolvedType, startFlags,
                 profilerInfo, userId);
@@ -1178,11 +1235,13 @@ public final class ActivityStackSupervisor implements DisplayListener {
                     ? new ProfilerInfo(profileFile, profileFd, mService.mSamplingInterval,
                     mService.mAutoStopProfiler) : null;
             app.forceProcessStateUpTo(ActivityManager.PROCESS_STATE_TOP);
+			int align = mWindowManager.getHalfScreenWindowAlignFromSameTask(r.appToken,r.task.taskId);
             app.thread.scheduleLaunchActivity(new Intent(r.intent), r.appToken,
+ r.task.taskId,r.isHomeActivity,
                     System.identityHashCode(r), r.info, new Configuration(mService.mConfiguration),
                     r.compat, r.launchedFromPackage, r.task.voiceInteractor, app.repProcState,
                     r.icicle, r.persistentState, results, newIntents, !andResume,
-                    mService.isNextTransitionForward(), profilerInfo);
+                    mService.isNextTransitionForward(), profilerInfo,align);
 
             if ((app.info.flags&ApplicationInfo.FLAG_CANT_SAVE_STATE) != 0) {
                 // This may be a heavy-weight process!  Note that the package
@@ -1465,7 +1524,8 @@ public final class ActivityStackSupervisor implements DisplayListener {
                         aInfo.applicationInfo.packageName);
             } catch (RemoteException e) {
                 mService.mController = null;
-            }
+				mService.mWindowManager.mHasController = false;
+            }	
         }
 
         if (abort) {
@@ -1858,11 +1918,19 @@ public final class ActivityStackSupervisor implements DisplayListener {
                     ActivityRecord curTop = lastStack == null?
                             null : lastStack.topRunningNonDelayedActivityLocked(notTop);
                     boolean movedToFront = false;
-                    if (curTop != null && (curTop.task != intentActivity.task ||
-                            curTop.task != lastStack.topTask())) {
+					boolean flag = false;
+					if(mService.mConfiguration.enableMultiWindow()){
+						flag = !intentActivity.task.mTopOfLauncher;
+					}
+                    if ((curTop != null && (curTop.task != intentActivity.task ||
+                            curTop.task != lastStack.topTask())) || flag) {
                         r.intent.addFlags(Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT);
-                        if (sourceRecord == null || (sourceStack.topActivity() != null &&
-                                sourceStack.topActivity().task == sourceRecord.task)) {
+						intentActivity.task.mTopOfLauncher = true;
+						boolean callerAtFront = sourceRecord == null
+                                || (sourceStack.topActivity() != null &&
+                                		sourceStack.topActivity().task == sourceRecord.task)
+                                || mService.mConfiguration.enableMultiWindow();
+                        if (callerAtFront) {
                             // We really do want to push this one into the
                             // user's face, right now.
                             if (launchTaskBehind && sourceRecord != null) {
@@ -1873,7 +1941,8 @@ public final class ActivityStackSupervisor implements DisplayListener {
                                     "bringingFoundTaskToFront");
                             if ((launchFlags &
                                     (FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_TASK_ON_HOME))
-                                    == (FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_TASK_ON_HOME)) {
+                                    == (FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_TASK_ON_HOME) 
+                                    && !mService.mConfiguration.enableMultiWindow()) {
                                 // Caller wants to appear on home activity.
                                 intentActivity.task.setTaskToReturnTo(HOME_ACTIVITY_TYPE);
                             }
@@ -2467,6 +2536,7 @@ public final class ActivityStackSupervisor implements DisplayListener {
         if (targetStack == null) {
             targetStack = getFocusedStack();
         }
+		//new RuntimeException("here").fillInStackTrace();
         // Do targetStack first.
         boolean result = false;
         if (isFrontStack(targetStack)) {
@@ -2708,6 +2778,7 @@ public final class ActivityStackSupervisor implements DisplayListener {
                 }
             }
         }
+        mPm.cpuBoost(2000 * 1000);
         if (DEBUG_TASKS) Slog.d(TAG, "No task found");
         return null;
     }
@@ -3670,6 +3741,9 @@ public final class ActivityStackSupervisor implements DisplayListener {
                         }
                     }
                 } break;
+                case LAUNCH_APP_START:{
+                 Settings.System.putString(mService.mContext.getContentResolver(), Settings.System.LAUNCHER_CLICK_APP, (String)msg.obj);
+                }break;
             }
         }
     }

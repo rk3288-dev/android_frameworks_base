@@ -547,7 +547,9 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
                 } else {
                     state = IccCardConstants.State.ABSENT;
                 }
-            } else if (IccCardConstants.INTENT_VALUE_ICC_READY.equals(stateExtra)) {
+            }else if (IccCardConstants.INTENT_VALUE_ICC_NOT_READY.equals(stateExtra)){
+		state = IccCardConstants.State.NOT_READY;
+	    }else if (IccCardConstants.INTENT_VALUE_ICC_READY.equals(stateExtra)) {
                 state = IccCardConstants.State.READY;
             } else if (IccCardConstants.INTENT_VALUE_ICC_LOCKED.equals(stateExtra)) {
                 final String lockedReason = intent
@@ -1265,14 +1267,15 @@ public class KeyguardUpdateMonitor implements TrustManager.TrustListener {
             state = State.UNKNOWN;
         }
         SimData data = mSimDatas.get(subId);
-        final boolean changed;
+        boolean changed = false;
+        if (DEBUG_SIM_STATES) {
+            Log.d(TAG, "refreshSimState SimData: " + data + ", state: " + state
+                             + ", subId: " + subId + ", slotId: " + slotId);
+        }
         if (data == null) {
             data = new SimData(state, slotId, subId);
             mSimDatas.put(subId, data);
             changed = true; // no data yet; force update
-        } else {
-            changed = data.simState != state;
-            data.simState = state;
         }
         return changed;
     }

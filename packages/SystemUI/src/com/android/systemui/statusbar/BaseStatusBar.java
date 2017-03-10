@@ -102,6 +102,10 @@ import com.android.systemui.statusbar.stack.NotificationStackScrollLayout;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import android.os.SystemProperties;
+
+import android.app.IActivityManager;
+
 
 import static com.android.keyguard.KeyguardHostView.OnDismissAction;
 
@@ -245,7 +249,33 @@ public abstract class BaseStatusBar extends SystemUI implements
     public boolean isDeviceProvisioned() {
         return mDeviceProvisioned;
     }
+    //huangjc win bar
+    protected final ContentObserver mMultiConfigBoxObserver = new ContentObserver(new Handler()){
+		     @Override
+		     public void onChange(boolean selfChange) {
+			final boolean isshow = 0 != Settings.System.getInt(
+                    mContext.getContentResolver(), Settings.System.MULTI_WINDOW_CONFIG, 0);
+			       try {
+		            IActivityManager am = ActivityManagerNative.getDefault();
+		            Configuration config = am.getConfiguration();
+		
+		            // Will set userSetLocale to indicate this isn't some passing default - the user
+		            // wants this remembered
+		            config.setMultiWindowFlag(isshow);
+		
+		            am.updateConfiguration(config);
+		            // Trigger the dirty bit for the Settings Provider.
+		            //BackupManager.dataChanged("com.android.providers.settings");
+		        } catch (RemoteException e) {
+		            // Intentionally left blank
+		        }
+				
+			if(true||"box".equals(SystemProperties.get("ro.target.product", "tablet"))){
+		 	 android.os.Process.killProcess(android.os.Process.myPid()); 
+		 	}			
+		      }
 
+	};
     protected final ContentObserver mSettingsObserver = new ContentObserver(mHandler) {
         @Override
         public void onChange(boolean selfChange) {
@@ -510,6 +540,10 @@ public abstract class BaseStatusBar extends SystemUI implements
         mDreamManager = IDreamManager.Stub.asInterface(
                 ServiceManager.checkService(DreamService.DREAM_SERVICE));
         mPowerManager = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
+       //huangjc:win bar 
+        mContext.getContentResolver().registerContentObserver(
+                Settings.System.getUriFor(Settings.System.MULTI_WINDOW_CONFIG), false,
+                mMultiConfigBoxObserver);        
 
         mSettingsObserver.onChange(false); // set up
         mContext.getContentResolver().registerContentObserver(
@@ -1528,6 +1562,58 @@ public abstract class BaseStatusBar extends SystemUI implements
         return new NotificationClicker(intent, notificationKey, forHun);
     }
 
+    public void startPendingIntentDismissingKeyguard(final PendingIntent intent) {
+        if (!isDeviceProvisioned()) return;
+
+        final boolean keyguardShowing = mStatusBarKeyguardViewManager.isShowing();
+        final boolean afterKeyguardGone = intent.isActivity()
+                && PreviewInflater.wouldLaunchResolverActivity(mContext, intent.getIntent(),
+                mCurrentUserId);
+        dismissKeyguardThenExecute(new OnDismissAction() {
+            public boolean onDismiss() {
+                new Thread() {
+                    @Override
+                    public void run() {
+                        try {
+                            if (keyguardShowing && !afterKeyguardGone) {
+                                ActivityManagerNative.getDefault()
+                                        .keyguardWaitingForActivityDrawn();
+                            }
+
+                            // The intent we are sending is for the application, which
+                            // won't have permission to immediately start an activity after
+                            // the user switches to home.  We know it is safe to do at this
+                            // point, so make sure new activity switches are now allowed.
+                            ActivityManagerNative.getDefault().resumeAppSwitches();
+                        } catch (RemoteException e) {
+                        }
+
+                        try {
+                            intent.send();
+                        } catch (PendingIntent.CanceledException e) {
+                            // the stack trace isn't very helpful here.
+                            // Just log the exception message.
+                            Log.w(TAG, "Sending intent failed: " + e);
+
+                            // TODO: Dismiss Keyguard.
+                        }
+                        if (intent.isActivity()) {
+                            overrideActivityPendingAppTransition(keyguardShowing
+                                    && !afterKeyguardGone);
+                        }
+                    }
+                }.start();
+
+                // close the shade if it was open
+                animateCollapsePanels(CommandQueue.FLAG_EXCLUDE_RECENTS_PANEL,
+                        true /* force */);
+                visibilityChanged(false);
+
+                return true;
+            }
+        }, afterKeyguardGone);
+    }
+
     protected class NotificationClicker implements View.OnClickListener {
         private PendingIntent mIntent;
         private final String mNotificationKey;
@@ -1554,7 +1640,9 @@ public abstract class BaseStatusBar extends SystemUI implements
                         //
                         // In most cases, when FLAG_AUTO_CANCEL is set, the notification will
                         // become canceled shortly by NoMan, but we can't assume that.
-                        mHeadsUpNotificationView.releaseAndClose();
+                        if(null != mHeadsUpNotificationView){
+                             mHeadsUpNotificationView.releaseAndClose();
+                        }
                     }
                     new Thread() {
                         @Override
@@ -1830,9 +1918,11 @@ public abstract class BaseStatusBar extends SystemUI implements
 
         final String key = notification.getKey();
         boolean wasHeadsUp = isHeadsUp(key);
-        Entry oldEntry;
+        Entry oldEntry = null;
         if (wasHeadsUp) {
-            oldEntry = mHeadsUpNotificationView.getEntry();
+            if(null != mHeadsUpNotificationView){
+                oldEntry = mHeadsUpNotificationView.getEntry();
+            }
         } else {
             oldEntry = mNotificationData.get(key);
         }
@@ -1937,7 +2027,9 @@ public abstract class BaseStatusBar extends SystemUI implements
                         }
                     } else {
                         // we updated the notification above, so release to build a new shade entry
+                        if(null!=mHeadsUpNotificationView){
                         mHeadsUpNotificationView.releaseAndClose();
+                        }
                         return;
                     }
                 } else {
@@ -1976,7 +2068,9 @@ public abstract class BaseStatusBar extends SystemUI implements
                 } else {
                     if (DEBUG) Log.d(TAG, "releasing heads up for key: " + key);
                     oldEntry.notification = notification;
-                    mHeadsUpNotificationView.releaseAndClose();
+                    if(null!=mHeadsUpNotificationView){
+                        mHeadsUpNotificationView.releaseAndClose();
+                    }
                     return;
                 }
             } else {
@@ -1993,8 +2087,10 @@ public abstract class BaseStatusBar extends SystemUI implements
                             n.iconLevel,
                             n.number,
                             n.tickerText);
-                    oldEntry.icon.setNotification(n);
-                    oldEntry.icon.set(ic);
+                    if(null != oldEntry.icon){
+                        oldEntry.icon.setNotification(n);
+                        oldEntry.icon.set(ic);
+                    }
                     inflateViews(oldEntry, mStackScroller, wasHeadsUp);
                     mNotificationData.updateRanking(ranking);
                     updateNotifications();
@@ -2083,7 +2179,7 @@ public abstract class BaseStatusBar extends SystemUI implements
             return false;
         }
 
-        if (mHeadsUpNotificationView.isSnoozed(sbn.getPackageName())) {
+        if ((null!=mHeadsUpNotificationView)&&mHeadsUpNotificationView.isSnoozed(sbn.getPackageName())) {
             return false;
         }
 
@@ -2100,6 +2196,9 @@ public abstract class BaseStatusBar extends SystemUI implements
                 Notification.HEADS_UP_ALLOWED) != Notification.HEADS_UP_NEVER;
         boolean accessibilityForcesLaunch = isFullscreen
                 && mAccessibilityManager.isTouchExplorationEnabled();
+
+         if(mContext.getResources().getConfiguration().enableMultiWindow()&&!isFullscreen)
+              isFullscreen = true&&!sbn.isOngoing();
 
         boolean interrupt = (isFullscreen || (isHighPriority && (isNoisy || hasTicker)))
                 && isAllowed

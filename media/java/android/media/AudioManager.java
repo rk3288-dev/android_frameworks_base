@@ -715,6 +715,8 @@ public class AudioManager {
         }
     }
 
+    private static int mVolume = 0;
+
     /**
      * @hide
      */
@@ -742,14 +744,34 @@ public class AudioManager {
                                     : ADJUST_LOWER,
                             stream,
                             flags);
+		    mVolume = getStreamVolume(STREAM_MUSIC);
+		    Log.d(TAG,"mVolume = "+mVolume);
                 }
                 break;
             case KeyEvent.KEYCODE_VOLUME_MUTE:
                 if (event.getRepeatCount() == 0) {
                     MediaSessionLegacyHelper.getHelper(mContext).sendVolumeKeyEvent(event, false);
+		    if (isBox) {
+			if(getStreamVolume(STREAM_MUSIC) != 0) {
+			    mMusicVolume = getStreamVolume(STREAM_MUSIC);
+			    Log.d(TAG,"mMusicVolume = "+mMusicVolume);
+			    setStreamVolume(STREAM_MUSIC, 0, FLAG_SHOW_UI);
+			} else if (mMusicVolume != 0) {
+			    Log.d(TAG,"mMusicVolume = "+mMusicVolume);
+			    setStreamVolume(STREAM_MUSIC, mMusicVolume, FLAG_SHOW_UI);
+			}
+		    }
                 }
                 break;
         }
+    }
+
+    private static boolean isBox;
+    private static int mMusicVolume;
+
+    private void isBox() {
+	String boxString = android.os.SystemProperties.get("ro.target.product");
+        isBox = "box".equals(boxString);
     }
 
     /**

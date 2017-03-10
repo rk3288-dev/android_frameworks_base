@@ -388,6 +388,7 @@ public class RecoverySystem {
      */
     public static void rebootWipeUserData(Context context, boolean shutdown, String reason)
             throws IOException {
+        SystemProperties.set("app.firefly.config","1");
         UserManager um = (UserManager) context.getSystemService(Context.USER_SERVICE);
         if (um.hasUserRestriction(UserManager.DISALLOW_FACTORY_RESET)) {
             throw new SecurityException("Wiping data is not allowed for this user.");

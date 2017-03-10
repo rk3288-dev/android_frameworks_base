@@ -1774,7 +1774,155 @@ public final class Settings {
          * @hide
          */
         public static final int ADVANCED_SETTINGS_DEFAULT = 0;
+           
+        /**
+          *Screenshot store location  add by dzy
+          * @hide
+          */
+        public static final String SCREENSHOT_LOCATION="screenshot_location";
+ 
+        /**
+          *scrrenshot button wether display
+          * @hide
+          */
+        public static final String SCREENSHOT_BUTTON_SHOW="screenshot_button_show";
 
+
+        /** add by huangjc for ExternalKeyboard
+        *@hide
+        */
+        public static final String EXTER_KEYBOARD_CONFIG = "exter_keyboard_config";
+
+        
+        /**
+         *hide system bar
+         * @hide
+         */
+        public static final String SYSTEMBAR_HIDE="systembar_hide";
+
+        /**
+         * launcher app start  add by lly
+         * @hide
+         */
+        public static final String LAUNCHER_CLICK_APP ="launcher.click.app";
+   /**
+	    	*@hide
+	    	*/
+	    public static final String MULTI_WINDOW_BUTTON_SHOW = "multi_window_button_show";
+   		 /**
+	    	*@hide
+	    	*/
+	    public static final String DUAL_SCREEN_MODE = "dual_screen_mode";
+		  /**
+	    	*@hide
+	    	*/
+	    public static final String DUAL_SCREEN_ICON_USED = "dual_screen_icon_used";
+		   /**
+	    	*@hide
+	    	*/
+	    public static final String DISPLAY_SHOW_SYNCHRONIZATION = "display_show_synchronization";
+		/**
+		*@hide
+		*/
+		public static final String MULTI_WINDOW_USED = "multi_window_used";
+		/**
+		*@hide
+		*/
+		public static final String MULTI_WINDOW_CONFIG = "multi_window_config";
+		/**
+		*@hide
+		*/
+		public static final String MULITI_WINDOW_MODE = "multi_window_mode";
+
+		/**
+		*@hide
+		*/
+		public static final int MULITI_WINDOW_FULL_SCREEN_MODE = 0;
+
+		/**
+		*@hide
+		*/
+		public static final int MULITI_WINDOW_HALF_SCREEN_MODE = 1;
+
+		/**
+		*@hide
+		*/
+		public static final int MULITI_WINDOW_FOUR_SCREEN_MODE = 2;
+
+		/**
+		*@hide
+		*/
+		public static final String HALF_SCREEN_WINDOW_ENABLE = "half_screen_window_enable";
+
+		/**
+		*@hide
+		*/
+		public static final String FOUR_SCREEN_WINDOW_ENABLE = "four_screen_window_enable";
+
+		/**
+		*@hide
+		*/
+		public static final String HALF_SCREEN_WINDOW_POSITION = "half_screen_window_position";
+
+		/**
+		*@hide
+		*/
+		public static final String FOUR_SCREEN_WINDOW_POSITION = "four_screen_window_position";
+
+		/**
+		*@hide
+		*/
+		public static final String FOUR_SCREEN_WINDOW_AREAS = "four_screen_window_areas";
+
+		/**
+		*@hide
+		*/
+		public static final String MULTI_WINDOW_OPERATION = "multi_window_operation";
+
+		/**
+		*@hide
+		*/
+		public static final String MULTI_WINDOW_MIN_OPERATION_PACKAGE = "multi_window_min_operation_package";
+
+		/**
+		*@hide
+		*/
+		public static final String MULTI_WINDOW_MIN_OPERATION_MOVE_PACKAGE = "multi_window_min_operation_move_package";
+
+
+		/**
+		*@hide
+		*/
+		public static final int MULTI_WINDOW_CLOSE = 0;
+
+		/**
+		*@hide
+		*/
+		public static final int MULTI_WINDOW_MIN = 1;
+
+
+		/**
+		*@hide
+		*/
+		public static final int MULTI_WINDOW_MAX = 2;
+
+		/**
+		*@hide
+		*/
+		public static final String MULTI_WINDOW_SIDE_SLIP = "multi_window_side_slip";
+
+		/**
+		*@hide
+		*/
+		public static final String HALF_SCREEN_APP_LOCATION = "half_screen_app_location";
+		/**
+		*@hide
+		*/
+		public static final String MULTI_WINDOW_TOP_APP = "multi_screen_top_app";
+                /**
+                *@hide
+                */
+        public static final String TOP_MULTI_APP_ENABLE = "top_multi_window_enable";
         /**
          * @deprecated Use {@link android.provider.Settings.Global#AIRPLANE_MODE_ON} instead
          */
@@ -1857,7 +2005,72 @@ public final class Settings {
          */
         @Deprecated
         public static final String MODE_RINGER = Global.MODE_RINGER;
+        /**
+         * @hide
+         */
+        public static final String ETHERNET_ON = Secure.ETHERNET_ON;
 
+        /**
+         * @hide
+         */
+        public static final String PPPOE_ON = Secure.PPPOE_ON;
+        /**
+         * @hide
+         */
+        public static final String PPPOE_USERNAME = Secure.PPPOE_USERNAME;
+        /**
+         * @hide
+         */
+        public static final String PPPOE_PSWD = Secure.PPPOE_PSWD;
+//add by blb for ethernet 2015.1.13
+        /**
+         * Whether to use static IP and other static network attributes.
+         * @hide 
+         * Set to 1 for true and 0 for false.
+         *
+         */
+        public static final String ETHERNET_USE_STATIC_IP = "ethernet_use_static_ip";
+
+        /**
+         * The static IP address.
+         * Example: "192.168.1.51"
+         * @hide
+         */
+        public static final String ETHERNET_STATIC_IP = "ethernet_static_ip";
+
+        /**
+         * If using static IP, the gateway's IP address.
+         * Example: "192.168.1.1"
+         * @hide
+	 *
+         */
+
+        public static final String ETHERNET_STATIC_GATEWAY = "ethernet_static_gateway";
+
+        /**
+         * If using static IP, the net mask.
+         * Example: "192.168.1.1"
+         * @hide
+         */
+
+        public static final String ETHERNET_STATIC_NETMASK = "ethernet_static_netmask";
+
+        /**
+         * If using static IP, the dns1 
+         * Example: "192.168.1.1"
+         * @hide
+         */
+
+        public static final String ETHERNET_STATIC_DNS1 = "ethernet_static_dns1";
+
+        /**
+         * If using static IP, the dns2.
+         * @hide
+	 * Example: "192.168.1.1"
+         */
+        public static final String ETHERNET_STATIC_DNS2 = "ethernet_static_dns2";
+
+//end add
         /**
          * Whether to use static IP and other static network attributes.
          * <p>
@@ -1865,6 +2078,7 @@ public final class Settings {
          *
          * @deprecated Use {@link WifiManager} instead
          */
+
         @Deprecated
         public static final String WIFI_USE_STATIC_IP = "wifi_use_static_ip";
 
@@ -2025,6 +2239,26 @@ public final class Settings {
          */
         public static final String SCREEN_AUTO_BRIGHTNESS_ADJ = "screen_auto_brightness_adj";
 
+        //add for Hdmi
+        /**
+         * The hdmi lcd timeout seconds
+         *@hide
+         */
+        public static final String HDMI_LCD_TIMEOUT = "hdmi_lcd_timeout";
+
+        /**
+         * The button lights off timeout seconds
+         *@hide
+         */
+        public static final String BUTTON_LIGHTS_OFF_TIMEOUT = "button_lights_off_timeout";
+
+        /**
+         * The button lights enable. 1 = enabled, 0 = disabled.
+         *@hide
+         */
+        public static final String BUTTON_LIGHTS_ENABLED = "button_lights_enabled";
+
+
         /**
          * SCREEN_BRIGHTNESS_MODE value for manual mode.
          */
@@ -2072,6 +2306,27 @@ public final class Settings {
          * changing this value will not change the vibrate. See AudioManager.
          */
         public static final String VIBRATE_ON = "vibrate_on";
+        /**
+         * @hide
+          */    
+         public static final String VIBRATE_WHEN_CALLS_CONNECTED = "vibrate_when_calls_connected";
+               
+         /**
+         * @hide
+         */    
+         public static final String FLIP_MUTE_INCOMMING_CALL = "flip_mute_incomming_call";
+               
+         /**
+         * @hide
+         */    
+               public static final String EMERGENCY_CALL= "emergency_call";
+
+               /**
+         * @hide
+         */    
+               public static final String AUTO_CALL_RECORD = "auto_call_record";
+
+
 
         /**
          * If 1, redirects the system vibrator to all currently attached input devices
@@ -3459,6 +3714,12 @@ public final class Settings {
             return putStringForUser(cr, name, Float.toString(value), userHandle);
         }
 
+		 /**
+         * turn on/off the battery percentage show in status bar
+         * @hide
+         */
+        public static final String BATTERY_PERCENTAGE = "battery_percentage";
+
         /**
          * @deprecated Use {@link android.provider.Settings.Global#DEVELOPMENT_SETTINGS_ENABLED}
          * instead
@@ -3618,6 +3879,12 @@ public final class Settings {
          */
         @Deprecated
         public static final String LOCATION_PROVIDERS_ALLOWED = "location_providers_allowed";
+
+        /**
+         * Limit location when in power save mode
+         * @hide
+         */
+        public static final String LOW_POWER_MODE_LIMIT_LOCATION = "batterySaverGpsMode";
 
         /**
          * The degree of location access enabled by the user.
@@ -3840,6 +4107,29 @@ public final class Settings {
          * Whether to speak passwords while in accessibility mode.
          */
         public static final String ACCESSIBILITY_SPEAK_PASSWORD = "speak_password";
+//add by blb for pppoe auto connect 2015.9.8
+         /**
+         * flag for pppoe auto connect 
+         * @hide
+         */
+        public static final String PPPOE_ON = "pppoe_on";
+        /**
+         * pppoe username  
+         * @hide
+         */
+        public static final String PPPOE_USERNAME = "pppoe_username";
+        /**
+         * pppoe password
+         * @hide
+         */
+        public static final String PPPOE_PSWD = "pppoe_pswd";
+//end add
+
+        /**
+         *
+         * @hide
+         */
+        public static final String ETHERNET_ON = "ethernet_on";
 
         /**
          * Whether to draw text with high contrast while in accessibility mode.
@@ -5173,6 +5463,12 @@ public final class Settings {
          * Value for {@link #WIFI_SLEEP_POLICY} to never go to sleep.
          */
         public static final int WIFI_SLEEP_POLICY_NEVER = 2;
+    
+         /**
+         * Value for {@link #WIFI_SLEEP_POLICY} wifi to use intelligent sleep.
+         */
+        public static final int WIFI_SLEEP_POLICY_INTELLIGENT = 3;
+
 
         /**
          * Value to specify if the user prefers the date, time and time zone
@@ -5185,6 +5481,12 @@ public final class Settings {
          * to be automatically fetched from the network (NITZ). 1=yes, 0=no
          */
         public static final String AUTO_TIME_ZONE = "auto_time_zone";
+
+        /**
+         * Value to specify if automatically set language according to SIM. 1=yes,0=no
+         * @hide
+         */
+        public static final String AUTO_LANGUAGE_BY_SIM = "auto_language_by_sim";
 
         /**
          * URI for the car dock "in" event sound.
@@ -6427,6 +6729,36 @@ public final class Settings {
          * @hide
          */
         public static final String LOW_POWER_MODE_TRIGGER_LEVEL = "low_power_trigger_level";
+
+        /**
+         * Show indicator of power save mode
+         * @hide
+         */
+        public static final String SHOW_LOW_POWER_MODE_INDICATOR = "show_low_power_mode_indicator";
+
+        /**
+         * Limit CPU frequency when power save mode
+         * @hide
+         */
+        public static final String LOW_POWER_MODE_LIMIT_CPU = "low_power_mode_limit_cpu";
+
+        /**
+         * Limit location when power save mode
+         * @hide
+         */
+        public static final String LOW_POWER_MODE_LIMIT_BRIGHTNESS = "low_power_mode_limit_brightness";
+
+         /**
+         * Limit network when power save mode
+         * @hide
+         */
+        public static final String LOW_POWER_MODE_LIMIT_NETWORK = "low_power_mode_limit_network";
+
+        /**
+         * Limit network when power save mode
+         * @hide
+         */
+        public static final String LOW_POWER_MODE_LIMIT_ANIMATION = "low_power_mode_limit_animation";
 
          /**
          * If 1, the activity manager will aggressively finish activities and

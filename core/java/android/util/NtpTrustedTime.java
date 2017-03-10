@@ -38,7 +38,7 @@ public class NtpTrustedTime implements TrustedTime {
     private static NtpTrustedTime sSingleton;
     private static Context sContext;
 
-    private final String mServer;
+    private String mServer;
     private final long mTimeout;
 
     private ConnectivityManager mCM;
@@ -47,6 +47,14 @@ public class NtpTrustedTime implements TrustedTime {
     private long mCachedNtpTime;
     private long mCachedNtpElapsedRealtime;
     private long mCachedNtpCertainty;
+       
+       String[] backupNtpServers = new String[]{
+               "tw.pool.ntp.org",
+               "time.nist.gov",
+               "time-a.nist.gov"
+       };
+       int index = -1;
+       private static Context mContext;
 
     private NtpTrustedTime(String server, long timeout) {
         if (LOGD) Log.d(TAG, "creating NtpTrustedTime using " + server);
@@ -55,6 +63,7 @@ public class NtpTrustedTime implements TrustedTime {
     }
 
     public static synchronized NtpTrustedTime getInstance(Context context) {
+		mContext = context;
         if (sSingleton == null) {
             final Resources res = context.getResources();
             final ContentResolver resolver = context.getContentResolver();
@@ -100,15 +109,28 @@ public class NtpTrustedTime implements TrustedTime {
 
         if (LOGD) Log.d(TAG, "forceRefresh() from cache miss");
         final SntpClient client = new SntpClient();
-        if (client.requestTime(mServer, (int) mTimeout)) {
-            mHasCache = true;
-            mCachedNtpTime = client.getNtpTime();
-            mCachedNtpElapsedRealtime = client.getNtpTimeReference();
-            mCachedNtpCertainty = client.getRoundTripTime() / 2;
-            return true;
-        } else {
-            return false;
-        }
+               boolean result = false;
+               while(!(result = client.requestTime(mServer, (int)mTimeout)) && index < (backupNtpServers.length-1)){
+               index++;
+               mServer = backupNtpServers[index];
+        }   
+        index = -1;
+               Resources res = mContext.getResources();
+               String defaultServer = res.getString(
+                    com.android.internal.R.string.config_ntpServer);
+               String secureServer = Settings.Global.getString(
+                     mContext.getContentResolver(), Settings.Global.NTP_SERVER);
+
+               mServer  = secureServer != null ? secureServer : defaultServer;
+               
+               if(result){
+                       mHasCache = true;
+                       mCachedNtpTime = client.getNtpTime();
+                       mCachedNtpElapsedRealtime = client.getNtpTimeReference();
+                       mCachedNtpCertainty = client.getRoundTripTime() / 2;
+               }
+            
+               return result;
     }
 
     @Override

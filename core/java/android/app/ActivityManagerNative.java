@@ -695,7 +695,42 @@ public abstract class ActivityManagerNative extends Binder implements IActivityM
             reply.writeNoException();
             return true;
         }
+		case MOVE_TASK_TO_BACK_FLAG_TRANSACTION: {
+            data.enforceInterface(IActivityManager.descriptor);
+            int task = data.readInt();
+			int flag = data.readInt();
+            moveTaskToBack(task,flag);
+            reply.writeNoException();
+            return true;
 
+		}
+
+	case IF_UID_SUPPORT_PHONEMODE: {
+            data.enforceInterface(IActivityManager.descriptor);
+		    String id = data.readString();
+			int isRemove = data.readInt();
+		    boolean result = getRights(id,isRemove != 0);
+            reply.writeNoException();
+            reply.writeInt(result ? 1 : 0);
+            return true;
+	}
+
+        case IF_UID_SUPPORT_HALFMODE: {
+            data.enforceInterface(IActivityManager.descriptor);
+            String id = data.readString();
+            boolean result = getLefts(id);
+            reply.writeNoException();
+            reply.writeInt(result ? 1 : 0);
+            return true;
+        }
+        case GET_ENABLE_MULTI_WINDOW: {
+            data.enforceInterface(IActivityManager.descriptor);
+            int id = data.readInt();
+            boolean result = getEnableMulWindow();
+            reply.writeNoException();
+            reply.writeInt(result ? 1 : 0);
+            return true;
+        }
         case MOVE_ACTIVITY_TASK_TO_BACK_TRANSACTION: {
             data.enforceInterface(IActivityManager.descriptor);
             IBinder token = data.readStrongBinder();
@@ -3167,6 +3202,18 @@ class ActivityManagerProxy implements IActivityManager
         data.recycle();
         reply.recycle();
     }
+    public void moveTaskToBack(int task,int flag) throws RemoteException
+    {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        data.writeInt(task);
+		data.writeInt(flag);
+        mRemote.transact(MOVE_TASK_TO_BACK_FLAG_TRANSACTION, data, reply, 0);
+        reply.readException();
+        data.recycle();
+        reply.recycle();
+    }	
     public boolean moveActivityTaskToBack(IBinder token, boolean nonRoot)
             throws RemoteException {
         Parcel data = Parcel.obtain();
@@ -5465,5 +5512,45 @@ class ActivityManagerProxy implements IActivityManager
         reply.recycle();
     }
 
+    @Override
+    public boolean getRights(String id,boolean isRemove) throws RemoteException {
+	Parcel data = Parcel.obtain();
+	Parcel reply = Parcel.obtain();
+	data.writeInterfaceToken(IActivityManager.descriptor);
+    	data.writeString(id);
+	data.writeInt(isRemove ? 1 : 0);
+	mRemote.transact(IF_UID_SUPPORT_PHONEMODE, data, reply, 0);
+	reply.readException();
+	boolean res = reply.readInt() != 0;
+	data.recycle();
+	reply.recycle();
+	return res;
+    }
+
+   @Override
+    public boolean getLefts(String id) throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+    	data.writeString(id);
+        mRemote.transact(IF_UID_SUPPORT_HALFMODE, data, reply, 0);
+        reply.readException();
+        boolean res = reply.readInt() != 0;
+        data.recycle();
+        reply.recycle();
+        return res;
+    }
+      @Override
+    public boolean getEnableMulWindow() throws RemoteException {
+        Parcel data = Parcel.obtain();
+        Parcel reply = Parcel.obtain();
+        data.writeInterfaceToken(IActivityManager.descriptor);
+        mRemote.transact(GET_ENABLE_MULTI_WINDOW, data, reply, 0);
+        reply.readException();
+        boolean res = reply.readInt() != 0;
+        data.recycle();
+        reply.recycle();
+        return res;
+    }
     private IBinder mRemote;
 }

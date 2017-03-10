@@ -34,6 +34,7 @@
 #include <utils/Log.h>
 #include <utils/Looper.h>
 #include <utils/threads.h>
+#include <cutils/properties.h>
 
 #include <input/PointerController.h>
 #include <input/SpriteController.h>
@@ -52,6 +53,13 @@
 #include <ScopedPrimitiveArray.h>
 #include <ScopedUtfChars.h>
 
+#include <stddef.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
+#include <limits.h>
+#include <math.h>
+
 #include "com_android_server_power_PowerManagerService.h"
 #include "com_android_server_input_InputApplicationHandle.h"
 #include "com_android_server_input_InputWindowHandle.h"
@@ -62,6 +70,7 @@ namespace android {
 // The scaling factor is calculated as 2 ^ (speed * exponent),
 // where the speed ranges from -7 to + 7 and is supplied by the user.
 static const float POINTER_SPEED_EXPONENT = 1.0f / 4;
+static sp<PointerControllerInterface> mPointerController;
 
 static struct {
     jmethodID notifyConfigurationChanged;
@@ -73,6 +82,7 @@ static struct {
     jmethodID interceptKeyBeforeQueueing;
     jmethodID interceptMotionBeforeQueueingNonInteractive;
     jmethodID interceptKeyBeforeDispatching;
+	jmethodID interceptMotionBeforeDispatching;
     jmethodID dispatchUnhandledKey;
     jmethodID checkInjectEventsPermission;
     jmethodID getVirtualKeyQuietTimeMillis;
@@ -184,6 +194,9 @@ public:
     status_t unregisterInputChannel(JNIEnv* env, const sp<InputChannel>& inputChannel);
 
     void setInputWindows(JNIEnv* env, jobjectArray windowHandleObjArray);
+	void setDontFocusedHome(bool dontNeedFocusHome);
+	void setMultiWindowConfig(bool enable);
+	void setDualScreenConfig(bool enable);
     void setFocusedApplication(JNIEnv* env, jobject applicationHandleObj);
     void setInputDispatchMode(bool enabled, bool frozen);
     void setSystemUiVisibility(int32_t visibility);
@@ -220,6 +233,9 @@ public:
     virtual nsecs_t interceptKeyBeforeDispatching(
             const sp<InputWindowHandle>& inputWindowHandle,
             const KeyEvent* keyEvent, uint32_t policyFlags);
+	virtual nsecs_t interceptMotionBeforeDispatching(
+			const sp<InputWindowHandle>& inputWindowHandle,
+			const MotionEvent* motionEvent, uint32_t policyFlags);
     virtual bool dispatchUnhandledKey(const sp<InputWindowHandle>& inputWindowHandle,
             const KeyEvent* keyEvent, uint32_t policyFlags, KeyEvent* outFallbackKeyEvent);
     virtual void pokeUserActivity(nsecs_t eventTime, int32_t eventType);
@@ -260,6 +276,8 @@ private:
 
         // Pointer controller singleton, created and destroyed as needed.
         wp<PointerController> pointerController;
+
+        int hardwareRotation;
     } mLocked;
 
     volatile bool mInteractive;
@@ -291,6 +309,12 @@ NativeInputManager::NativeInputManager(jobject contextObj,
         mLocked.pointerSpeed = 0;
         mLocked.pointerGesturesEnabled = true;
         mLocked.showTouches = false;
+
+        mLocked.hardwareRotation = 0;
+	    char property[PROPERTY_VALUE_MAX];
+        if (property_get("ro.sf.hwrotation", property, "0") > 0) {
+            mLocked.hardwareRotation = atoi(property) / 90;
+        }
     }
 
     sp<EventHub> eventHub = new EventHub();
@@ -327,10 +351,15 @@ void NativeInputManager::setDisplayViewport(bool external, const DisplayViewport
     {
         AutoMutex _l(mLock);
 
+        DisplayViewport convertViewport;
+        convertViewport.copyFrom(viewport);
+    
+        convertViewport.orientation = (mLocked.hardwareRotation + convertViewport.orientation) % 4;
+
         DisplayViewport& v = external ? mLocked.externalViewport : mLocked.internalViewport;
-        if (v != viewport) {
+        if (v != convertViewport) {
             changed = true;
-            v = viewport;
+            v = convertViewport;
 
             if (!external) {
                 sp<PointerController> controller = mLocked.pointerController.promote();
@@ -338,7 +367,7 @@ void NativeInputManager::setDisplayViewport(bool external, const DisplayViewport
                     controller->setDisplayViewport(
                             viewport.logicalRight - viewport.logicalLeft,
                             viewport.logicalBottom - viewport.logicalTop,
-                            viewport.orientation);
+                            convertViewport.orientation);
                 }
             }
         }
@@ -684,6 +713,18 @@ void NativeInputManager::setInputWindows(JNIEnv* env, jobjectArray windowHandleO
     }
 }
 
+void NativeInputManager::setDontFocusedHome(bool dontNeedFocusHome) {
+    mInputManager->getDispatcher()->setDontFocusedHome(dontNeedFocusHome);
+}
+
+void NativeInputManager::setMultiWindowConfig(bool enable){
+	mInputManager->getDispatcher()->setMultiWindowConfig(enable);
+}
+
+void NativeInputManager::setDualScreenConfig(bool enable){
+	mInputManager->getDispatcher()->setDualScreenConfig(enable);
+}
+
 void NativeInputManager::setFocusedApplication(JNIEnv* env, jobject applicationHandleObj) {
     sp<InputApplicationHandle> applicationHandle =
             android_server_InputApplicationHandle_getHandle(env, applicationHandleObj);
@@ -938,6 +979,43 @@ nsecs_t NativeInputManager::interceptKeyBeforeDispatching(
     return result;
 }
 
+nsecs_t NativeInputManager::interceptMotionBeforeDispatching(
+	const sp < InputWindowHandle > & inputWindowHandle,
+	const MotionEvent * motionEvent,uint32_t policyFlags){
+	// Policy:
+	 // - Ignore untrusted events and pass them along.
+	 // - Filter normal events and trusted injected events through the window manager policy to
+	 //   handle the HOME key and the like.
+	 //ALOGE("com_android_server_input_inputmanager interceptMotionBeforeDispatching");
+	 nsecs_t result = 0;
+	 if (policyFlags & POLICY_FLAG_TRUSTED) {
+		 JNIEnv* env = jniEnv();
+	
+		 // Note: inputWindowHandle may be null.
+		 jobject inputWindowHandleObj = getInputWindowHandleObjLocalRef(env, inputWindowHandle);
+		 jobject motionEventObj = android_view_MotionEvent_obtainAsCopy(env, motionEvent);
+		 if (motionEventObj) {
+			 jlong delayMillis = env->CallLongMethod(mServiceObj,
+					 gServiceClassInfo.interceptMotionBeforeDispatching,
+					 inputWindowHandleObj, motionEventObj, policyFlags);
+			 bool error = checkAndClearExceptionFromCallback(env, "interceptMotionBeforeDispatching");
+			 android_view_MotionEvent_recycle(env, motionEventObj);
+			 env->DeleteLocalRef(motionEventObj);
+			 if (!error) {
+				 if (delayMillis < 0) {
+					 result = -1;
+				 } else if (delayMillis > 0) {
+					 result = milliseconds_to_nanoseconds(delayMillis);
+				 }
+			 }
+		 } else {
+			 ALOGE("Failed to obtain key event object for interceptMotionBeforeDispatching.");
+		 }
+		 env->DeleteLocalRef(inputWindowHandleObj);
+	 }
+	 return result;
+
+}
 bool NativeInputManager::dispatchUnhandledKey(const sp<InputWindowHandle>& inputWindowHandle,
         const KeyEvent* keyEvent, uint32_t policyFlags, KeyEvent* outFallbackKeyEvent) {
     // Policy:
@@ -1209,6 +1287,26 @@ static void nativeSetInputWindows(JNIEnv* env, jclass clazz,
 
     im->setInputWindows(env, windowHandleObjArray);
 }
+static void nativeSetDontFocusedHome(JNIEnv* env, jclass clazz,
+           jlong ptr, jboolean dontNeedFocusHome) {
+    
+	NativeInputManager* im = reinterpret_cast<NativeInputManager*>(ptr);
+
+    im->setDontFocusedHome(dontNeedFocusHome);
+}
+
+static void nativeSetMultiWindowConfig(JNIEnv* env, jclass clazz,
+		jlong ptr, jboolean enable){
+	NativeInputManager* im = reinterpret_cast<NativeInputManager*>(ptr);
+	im->setMultiWindowConfig(enable);
+
+}
+
+static void nativeSetDualScreenConfig(JNIEnv* env, jclass clazz,
+                jlong ptr, jboolean enable){
+	NativeInputManager* im = reinterpret_cast<NativeInputManager*>(ptr);
+	im->setDualScreenConfig(enable);
+}
 
 static void nativeSetFocusedApplication(JNIEnv* env, jclass clazz,
         jlong ptr, jobject applicationHandleObj) {
@@ -1341,6 +1439,76 @@ static void nativeMonitor(JNIEnv* env, jclass clazz, jlong ptr) {
     im->getInputManager()->getDispatcher()->monitor();
 }
 
+/*$_rbox_$_modify_$_zhangwen_20140219: this function is just for infrare mouse,*/
+//$_rbox_$_modify_$   make a function interface here to painter the mouse pointer
+//$_rbox_$_modify_$_begin
+static void android_server_InputManager_nativedispatchMouse(JNIEnv* env,
+		jclass clazz, jfloat x, jfloat y, jint w, jint h, jlong ptr) {
+    NativeInputManager* im = reinterpret_cast<NativeInputManager*>(ptr);
+
+    int mID;
+    float mx, my;
+    float screenWidth,screenHeight;
+    char *mgetID = new char[PROPERTY_VALUE_MAX];
+    char *mkeyMouseState = new char[PROPERTY_VALUE_MAX];
+    screenWidth = (float)w;
+    screenHeight = (float)h;
+
+    property_get("sys.ID.mID",mgetID,0);
+    mID=atoi(mgetID);
+
+    mPointerController=im->obtainPointerController(mID);
+
+    //start to dispatchMouse
+    mPointerController->setPresentation(
+                    PointerControllerInterface::PRESENTATION_POINTER);
+    mPointerController->move(x,y);
+    mPointerController->unfade(PointerControllerInterface::TRANSITION_IMMEDIATE);
+    mPointerController->getPosition(&mx, &my);
+
+    //if((mx<=0)||((mx>=(screenWidth-10.0f))||(my<=0)||(my>=(screenHeight-10.0f)))
+    //	x=0;y=0;
+
+    if (mx == 0) {
+	    mkeyMouseState="left";
+    } else if (mx>=(screenWidth-5.0f)) {
+	    mkeyMouseState="right";
+    } else if (my == 0) {
+	    mkeyMouseState="up";
+    } else if (my >= (screenHeight-5.0f)) {
+	    mkeyMouseState="down";
+    } else {
+	    mkeyMouseState="Non-boundary";
+    }
+
+    property_set("sys.keymouselimitstate",mkeyMouseState);
+}
+//$_rbox_$_modify_$_end
+
+
+/*$_rbox_$_modify_$_zhangwen_20140219: */
+//$_rbox_$_modify_$  make a function interface here to painter the mouse pointer
+//$_rbox_$_modify_$  by Coordinate rather than by Offset
+//$_rbox_$_modify_$_begin
+static void android_server_InputManager_nativedispatchMouseByCd(JNIEnv* env,
+jclass clazz, jfloat x, jfloat y, jlong ptr) {
+   NativeInputManager* im = reinterpret_cast<NativeInputManager*>(ptr);
+   int mID;
+   char *mgetID=new char[PROPERTY_VALUE_MAX];
+
+   property_get("sys.ID.mID",mgetID,0);
+   mID=atoi(mgetID);
+
+   mPointerController=im->obtainPointerController(mID);
+
+   //start to dispatchMouse
+   mPointerController->setPresentation(
+                    PointerControllerInterface::PRESENTATION_POINTER);
+   mPointerController->setPosition(x,y);
+   mPointerController->unfade(PointerControllerInterface::TRANSITION_IMMEDIATE);
+   //mPointerController->fade(PointerControllerInterface::TRANSITION_IMMEDIATE);
+}
+
 // ----------------------------------------------------------------------------
 
 static JNINativeMethod gInputManagerMethods[] = {
@@ -1371,6 +1539,12 @@ static JNINativeMethod gInputManagerMethods[] = {
             (void*) nativeInjectInputEvent },
     { "nativeSetInputWindows", "(J[Lcom/android/server/input/InputWindowHandle;)V",
             (void*) nativeSetInputWindows },
+    { "nativeSetDontFocusedHome", "(JZ)V",
+            (void*) nativeSetDontFocusedHome }, 
+    { "nativeSetMultiWindowConfig", "(JZ)V",
+    		(void*) nativeSetMultiWindowConfig },
+    { "nativeSetDualScreenConfig", "(JZ)V",
+                (void*) nativeSetDualScreenConfig},
     { "nativeSetFocusedApplication", "(JLcom/android/server/input/InputApplicationHandle;)V",
             (void*) nativeSetFocusedApplication },
     { "nativeSetInputDispatchMode", "(JZZ)V",
@@ -1399,6 +1573,10 @@ static JNINativeMethod gInputManagerMethods[] = {
             (void*) nativeDump },
     { "nativeMonitor", "(J)V",
             (void*) nativeMonitor },
+    { "nativedispatchMouse", "(FFIIJ)V",
+	    (void*) android_server_InputManager_nativedispatchMouse },
+    { "nativedispatchMouseByCd", "(FFJ)V",
+	    (void*) android_server_InputManager_nativedispatchMouseByCd },
 };
 
 #define FIND_CLASS(var, className) \
@@ -1452,6 +1630,10 @@ int register_android_server_InputManager(JNIEnv* env) {
             "interceptKeyBeforeDispatching",
             "(Lcom/android/server/input/InputWindowHandle;Landroid/view/KeyEvent;I)J");
 
+    GET_METHOD_ID(gServiceClassInfo.interceptMotionBeforeDispatching, clazz,
+            "interceptMotionBeforeDispatching",
+            "(Lcom/android/server/input/InputWindowHandle;Landroid/view/MotionEvent;I)J");
+	
     GET_METHOD_ID(gServiceClassInfo.dispatchUnhandledKey, clazz,
             "dispatchUnhandledKey",
             "(Lcom/android/server/input/InputWindowHandle;Landroid/view/KeyEvent;I)Landroid/view/KeyEvent;");

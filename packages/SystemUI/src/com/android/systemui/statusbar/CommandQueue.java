@@ -58,6 +58,15 @@ public class CommandQueue extends IStatusBar.Stub {
     private static final int MSG_NOTIFICATION_LIGHT_PULSE   = 17 << MSG_SHIFT;
     private static final int MSG_SHOW_SCREEN_PIN_REQUEST    = 18 << MSG_SHIFT;
 
+    //$_rbox_$_modify_$_chenxiao begin, add bar interface 
+    private static final int MSG_ADD_BAR                    = 19 << MSG_SHIFT;
+    //$_rbox_$_modify_$_chenxiao end
+
+    // add Dual SIM support
+    private static final int MSG_SHOW_SIM_SWITCH = 30 << MSG_SHIFT;
+    private static final int MSG_HIDE_SIM_SWITCH = 31 << MSG_SHIFT;
+
+
     public static final int FLAG_EXCLUDE_NONE = 0;
     public static final int FLAG_EXCLUDE_SEARCH_PANEL = 1 << 0;
     public static final int FLAG_EXCLUDE_RECENTS_PANEL = 1 << 1;
@@ -98,7 +107,13 @@ public class CommandQueue extends IStatusBar.Stub {
         public void buzzBeepBlinked();
         public void notificationLightOff();
         public void notificationLightPulse(int argb, int onMillis, int offMillis);
+        //$_rockchip_$_modify_$_huangjc begin, add bar interface 
+        public void addBar();
+        //$_rockchip_$_modify_$_huangjc end
         public void showScreenPinningRequest();
+        // add Dual SIM support
+        public void showSimSwitchUi(int type);
+        public void hideSimSwitchUi();
     }
 
     public CommandQueue(Callbacks callbacks, StatusBarIconList list) {
@@ -240,9 +255,33 @@ public class CommandQueue extends IStatusBar.Stub {
         }
     }
 
+    //$_rbox_$_modify_$_huangjc begin, add bar interface 
+    public void addBar() {
+       synchronized (mList) {
+               mHandler.removeMessages(MSG_ADD_BAR);
+            mHandler.obtainMessage(MSG_ADD_BAR, 0, 0, null).sendToTarget();
+               }
+    }
+    //$_rbox_$_modify_$_huangjc end
+
     public void showScreenPinningRequest() {
         synchronized (mList) {
             mHandler.sendEmptyMessage(MSG_SHOW_SCREEN_PIN_REQUEST);
+        }
+    }
+
+    // add Dual SIM support
+    public void showSimSwitchUi(int type) {
+        synchronized (mList) {
+            mHandler.removeMessages(MSG_SHOW_SIM_SWITCH);
+            mHandler.obtainMessage(MSG_SHOW_SIM_SWITCH, type, 0, null).sendToTarget();
+        }
+    }
+
+    public void hideSimSwitchUi() {
+        synchronized (mList) {
+            mHandler.removeMessages(MSG_HIDE_SIM_SWITCH);
+            mHandler.obtainMessage(MSG_HIDE_SIM_SWITCH, 0, 0, null).sendToTarget();
         }
     }
 
@@ -325,8 +364,20 @@ public class CommandQueue extends IStatusBar.Stub {
                 case MSG_NOTIFICATION_LIGHT_PULSE:
                     mCallbacks.notificationLightPulse((Integer) msg.obj, msg.arg1, msg.arg2);
                     break;
+                //$_rbox_$_modify_$_huangjc begin, add bar interface
+                case MSG_ADD_BAR:
+                       mCallbacks.addBar();
+                       break;
+                //$_rbox_$_modify_$_huangjc end
                 case MSG_SHOW_SCREEN_PIN_REQUEST:
                     mCallbacks.showScreenPinningRequest();
+                    break;
+                 // add Dual SIM support
+                case MSG_SHOW_SIM_SWITCH:
+                    mCallbacks.showSimSwitchUi(msg.arg1);
+                    break;
+                case MSG_HIDE_SIM_SWITCH:
+                    mCallbacks.hideSimSwitchUi();
                     break;
             }
         }

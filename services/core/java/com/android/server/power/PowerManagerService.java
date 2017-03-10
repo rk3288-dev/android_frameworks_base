@@ -71,6 +71,18 @@ import java.io.PrintWriter;
 import java.util.ArrayList;
 
 import libcore.util.Objects;
+//--------add for hdmi timeout--------------
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileDescriptor;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.RandomAccessFile;
+//--------end----------------
+
+import android.hardware.display.DisplayManager;
+import android.net.wifi.WifiManager;
 
 import static android.os.PowerManagerInternal.WAKEFULNESS_ASLEEP;
 import static android.os.PowerManagerInternal.WAKEFULNESS_AWAKE;
@@ -94,6 +106,7 @@ public final class PowerManagerService extends SystemService
     private static final int MSG_SANDMAN = 2;
     // Message: Sent when the screen brightness boost expires.
     private static final int MSG_SCREEN_BRIGHTNESS_BOOST_TIMEOUT = 3;
+	private static final int MSG_DISABLE_WIFI_FOR_WIFIP2P = 5;
 
     // Dirty bit: mWakeLocks changed
     private static final int DIRTY_WAKE_LOCKS = 1 << 0;
@@ -147,6 +160,9 @@ public final class PowerManagerService extends SystemService
     // Power hints defined in hardware/libhardware/include/hardware/power.h.
     private static final int POWER_HINT_INTERACTION = 2;
     private static final int POWER_HINT_LOW_POWER = 5;
+
+    // Max time (microseconds) to allow a CPU boost for
+    private static final int MAX_CPU_BOOST_TIME = 5000000;
 
     private final Context mContext;
     private final ServiceThread mHandlerThread;
@@ -416,8 +432,22 @@ public final class PowerManagerService extends SystemService
     // The user turned off low power mode below the trigger level
     private boolean mAutoLowPowerModeSnoozing;
 
+    // Limit brightness when on lower power mode
+    private int mLowPowerModeLimitedFunctions;
+
     // True if the battery level is currently considered low.
     private boolean mBatteryLevelLow;
+
+    // True if hdmi is connect.
+    private boolean mHdmiConnect;
+
+    //------modify begin for button & keyboard backlight by cx@rock-chips.com------
+    private static final int DEFAULT_BUTTON_LIGHTS_OFF_TIMEOUT = 1500;
+    private boolean mButtonLightsEnabled = false;
+    private boolean mButtonLightsOn = false;
+    private int mButtonLightsOffTimeoutSetting;
+    private int mTemporaryButtonBrightnessSettingOverride = -1;
+    //------modify end------
 
     // True if theater mode is enabled
     private boolean mTheaterModeEnabled;
@@ -432,6 +462,11 @@ public final class PowerManagerService extends SystemService
     private static native void nativeSetInteractive(boolean enable);
     private static native void nativeSetAutoSuspend(boolean enable);
     private static native void nativeSendPowerHint(int hintId, int data);
+    private static native void nativeCpuBoost(int duration);
+    private static native void nativeSetPerformanceMode(int mode);
+
+	private DisplayManager mDisplayManager;
+	private WifiManager mWifiManager;
 
     public PowerManagerService(Context context) {
         super(context);
@@ -440,6 +475,7 @@ public final class PowerManagerService extends SystemService
                 Process.THREAD_PRIORITY_DISPLAY, false /*allowIo*/);
         mHandlerThread.start();
         mHandler = new PowerManagerHandler(mHandlerThread.getLooper());
+	mDisplayManager = (DisplayManager) mContext.getSystemService(Context.DISPLAY_SERVICE);
 
         synchronized (mLock) {
             mWakeLockSuspendBlocker = createSuspendBlockerLocked("PowerManagerService.WakeLocks");
@@ -533,6 +569,10 @@ public final class PowerManagerService extends SystemService
             filter = new IntentFilter();
             filter.addAction(Intent.ACTION_DOCK_EVENT);
             mContext.registerReceiver(new DockReceiver(), filter, null, mHandler);
+            
+            filter=new IntentFilter();
+            filter.addAction("android.intent.action.HDMI_PLUG");
+            mContext.registerReceiver(new HdmiReceiver(), filter,null,mHandler);
 
             // Register for settings changes.
             final ContentResolver resolver = mContext.getContentResolver();
@@ -568,6 +608,36 @@ public final class PowerManagerService extends SystemService
                     false, mSettingsObserver, UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.Global.getUriFor(
                     Settings.Global.LOW_POWER_MODE_TRIGGER_LEVEL),
+                    false, mSettingsObserver, UserHandle.USER_ALL);
+            //--------------for hdmi timeout 
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.HDMI_LCD_TIMEOUT),
+                    false, mSettingsObserver, UserHandle.USER_ALL);
+            //-----------------end------------------
+            //------modify begin for button & keyboard backlight by cx@rock-chips.com------
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.BUTTON_LIGHTS_ENABLED),
+                    false, mSettingsObserver, UserHandle.USER_ALL);
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.BUTTON_LIGHTS_OFF_TIMEOUT),
+                    false, mSettingsObserver, UserHandle.USER_ALL);
+            //------modify end------
+            
+
+            resolver.registerContentObserver(Settings.Global.getUriFor(
+                     Settings.Global.LOW_POWER_MODE_LIMIT_CPU),
+                     false, mSettingsObserver, UserHandle.USER_ALL);
+            resolver.registerContentObserver(Settings.Global.getUriFor(
+                    Settings.Global.LOW_POWER_MODE_LIMIT_BRIGHTNESS),
+                    false, mSettingsObserver, UserHandle.USER_ALL);
+            resolver.registerContentObserver(Settings.Secure.getUriFor(
+                    Settings.Secure.LOW_POWER_MODE_LIMIT_LOCATION),
+                    false, mSettingsObserver, UserHandle.USER_ALL);
+            resolver.registerContentObserver(Settings.Global.getUriFor(
+                    Settings.Global.LOW_POWER_MODE_LIMIT_NETWORK),
+                    false, mSettingsObserver, UserHandle.USER_ALL);
+             resolver.registerContentObserver(Settings.Global.getUriFor(
+                   Settings.Global.LOW_POWER_MODE_LIMIT_ANIMATION),
                     false, mSettingsObserver, UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.Global.getUriFor(
                     Settings.Global.THEATER_MODE_ON),
@@ -676,8 +746,61 @@ public final class PowerManagerService extends SystemService
             mAutoLowPowerModeConfigured = autoLowPowerModeConfigured;
             updateLowPowerModeLocked();
         }
+        int lowPowerModeLimitedFunctions = 0;
+        final boolean lowPowerModeLimitCPU = Settings.Global.getInt(resolver,
+                Settings.Global.LOW_POWER_MODE_LIMIT_CPU, 1) != 0;
+        if (lowPowerModeLimitCPU) {
+            lowPowerModeLimitedFunctions |= PowerManagerInternal.LOW_POWER_MODE_LIMIT_CPU;
+        }
+        final boolean lowPowerModeLimitBrightness = Settings.Global.getInt(resolver,
+                Settings.Global.LOW_POWER_MODE_LIMIT_BRIGHTNESS, 1) != 0;
+        if (lowPowerModeLimitBrightness) {
+            lowPowerModeLimitedFunctions |= PowerManagerInternal.LOW_POWER_MODE_LIMIT_BRIGHTNESS;
+        }
+        final boolean lowPowerModeLimitLocation = Settings.Secure.getInt(resolver,
+                Settings.Secure.LOW_POWER_MODE_LIMIT_LOCATION, 1) != 0;
+        if (lowPowerModeLimitLocation) {
+            lowPowerModeLimitedFunctions |= PowerManagerInternal.LOW_POWER_MODE_LIMIT_LOCATION;
+        }
+        final boolean lowPowerModeLimitNetwork = Settings.Global.getInt(resolver,
+                Settings.Global.LOW_POWER_MODE_LIMIT_NETWORK, 1) != 0;
+        if (lowPowerModeLimitNetwork) {
+            lowPowerModeLimitedFunctions |= PowerManagerInternal.LOW_POWER_MODE_LIMIT_NETWORK;
+        }
+        final boolean lowPowerModeLimitAnimation = Settings.Global.getInt(resolver,
+                Settings.Global.LOW_POWER_MODE_LIMIT_ANIMATION, 1) != 0;
+        if (lowPowerModeLimitAnimation) {
+            lowPowerModeLimitedFunctions |= PowerManagerInternal.LOW_POWER_MODE_LIMIT_ANIMATION;
+        }
 
+        updateLowPowerModeLimitedFunctionsLocked(lowPowerModeLimitedFunctions);
         mDirty |= DIRTY_SETTINGS;
+
+	//----------hdmi timeout -------------------
+	lcd_delay_timeout = Settings.System.getIntForUser(resolver,
+			Settings.System.HDMI_LCD_TIMEOUT, 10,
+			UserHandle.USER_CURRENT);
+
+	if(isAbleChangeHDMIMode()){
+		turnonScreen();
+	}
+        //----------end---------------
+        //------modify begin for button & keyboard backlight by cx@rock-chips.com------
+        mButtonLightsOffTimeoutSetting = Settings.System.getIntForUser(resolver,
+                Settings.System.BUTTON_LIGHTS_OFF_TIMEOUT, DEFAULT_BUTTON_LIGHTS_OFF_TIMEOUT,
+                UserHandle.USER_CURRENT);
+        boolean newenabled = (Settings.System.getIntForUser(resolver,
+                Settings.System.BUTTON_LIGHTS_ENABLED, 1,
+                UserHandle.USER_CURRENT) != 0);
+        if (newenabled && !mButtonLightsEnabled) {
+            mButtonLightsOn = true;
+            mTemporaryButtonBrightnessSettingOverride = mScreenBrightnessSettingDefault;
+        } else {
+            mButtonLightsOn = false;
+            mTemporaryButtonBrightnessSettingOverride = -1;
+        }
+        mButtonLightsEnabled = newenabled;
+        //------modify end------
     }
 
     void updateLowPowerModeLocked() {
@@ -715,6 +838,25 @@ public final class PowerManagerService extends SystemService
                     intent = new Intent(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED);
                     intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY);
                     mContext.sendBroadcast(intent);
+                }
+            });
+        }
+    }
+
+    private void updateLowPowerModeLimitedFunctionsLocked(int limitedFunctions) {
+        if (limitedFunctions != mLowPowerModeLimitedFunctions) {
+            mLowPowerModeLimitedFunctions = limitedFunctions;
+            BackgroundThread.getHandler().post(new Runnable() {
+                @Override
+                public void run() {
+                    ArrayList<PowerManagerInternal.LowPowerModeListener> listeners;
+                    synchronized (mLock) {
+                        listeners = new ArrayList<PowerManagerInternal.LowPowerModeListener>(
+                                mLowPowerModeListeners);
+                    }
+                    for (int i=0; i<listeners.size(); i++) {
+                        listeners.get(i).onLowPowerModeLimitedFunctionsChanged(mLowPowerModeLimitedFunctions);
+                    }
                 }
             });
         }
@@ -936,8 +1078,73 @@ public final class PowerManagerService extends SystemService
         }
     }
 
+    //-------for hdmi timeout 
+    private void turnonScreen(){
+
+	    ContentResolver resolver = mContext.getContentResolver();
+	    final long currentTimeout = Settings.System.getLong(resolver, Settings.System.HDMI_LCD_TIMEOUT,
+			    -1);
+	    mHandler1.removeCallbacks(mScreenTimeout);
+	    if(lcd_delay_timeout != -1){
+		    if(mTimeout){
+			    try {
+                    setTemporaryScreenBrightnessSettingOverrideInternal(mScreenBrightnessSetting);
+			    } catch (Exception e) {
+				    Slog.e(TAG, "Exception"+e);
+			    }
+		    }
+		    mTimeout=false;
+		    lockScreenOff();
+	    }
+
+	    return;
+    }
+
+    private boolean isAbleChangeHDMIMode(){
+	    return (lcd_delay_timeout != -1)&&mHdmiConnect;
+    }
+
+    Runnable mScreenTimeout = new Runnable() {
+	    public void run() {
+		    synchronized (this) {
+			    Slog.d(TAG,"screen time out");
+			    if(isAbleChangeHDMIMode()){
+				    try {
+                        setTemporaryScreenBrightnessSettingOverrideInternal(1);
+				    } catch (Exception e) {
+					    e.printStackTrace();
+				    }finally{
+				    	 mTimeout=true;
+				    }
+			    }
+		    }
+	    }
+    };
+    private void lockScreenOff() {
+	    Slog.d(TAG,"LockScreenOff"+String.valueOf(lcd_delay_timeout));
+	    mHandler1.postAtTime(mScreenTimeout, SystemClock.uptimeMillis() + 1000 * lcd_delay_timeout);
+    }
+
+    private long lcd_delay_timeout = 10;
+    private Handler mHandler1 = new Handler();
+    private boolean mTimeout=false;
+    //------------------------------------  end  -------------------------------------------------------------------------------------------------------
+
     // Called from native code.
     private void userActivityFromNative(long eventTime, int event, int flags) {
+	    //-----------------------------for hdmi timeout 
+	    synchronized (mLock) {
+		    if(isAbleChangeHDMIMode()){
+			    turnonScreen();
+		    }
+	    }
+	    //--------------------end-------------------------
+        //------modify begin for button & keyboard backlight by cx@rock-chips.com------
+        if (event == PowerManager.USER_ACTIVITY_EVENT_CAPACITIVE_BUTTON)
+            mButtonLightsOn = true;
+        else
+            mButtonLightsOn = false;
+        //------modify end------
         userActivityInternal(eventTime, event, flags, Process.SYSTEM_UID);
     }
 
@@ -999,6 +1206,7 @@ public final class PowerManagerService extends SystemService
     private void wakeUpInternal(long eventTime, int uid) {
         synchronized (mLock) {
             if (wakeUpNoUpdateLocked(eventTime, uid)) {
+                mButtonLightsOn = true;
                 updatePowerStateLocked();
             }
         }
@@ -1840,7 +2048,8 @@ public final class PowerManagerService extends SystemService
                     screenAutoBrightnessAdjustment;
             mDisplayPowerRequest.useAutoBrightness = autoBrightness;
             mDisplayPowerRequest.useProximitySensor = shouldUseProximitySensorLocked();
-            mDisplayPowerRequest.lowPowerMode = mLowPowerModeEnabled;
+            mDisplayPowerRequest.lowPowerMode = mLowPowerModeEnabled
+                    && (mLowPowerModeLimitedFunctions & PowerManagerInternal.LOW_POWER_MODE_LIMIT_BRIGHTNESS) != 0;
             mDisplayPowerRequest.boostScreenBrightness = mScreenBrightnessBoostInProgress;
 
             if (mDisplayPowerRequest.policy == DisplayPowerRequest.POLICY_DOZE) {
@@ -1851,7 +2060,14 @@ public final class PowerManagerService extends SystemService
                 mDisplayPowerRequest.dozeScreenState = Display.STATE_UNKNOWN;
                 mDisplayPowerRequest.dozeScreenBrightness = PowerManager.BRIGHTNESS_DEFAULT;
             }
-
+            //------modify begin for button & keyboard backlight by cx@rock-chips.com------
+            mDisplayPowerRequest.useButtonLights = mButtonLightsEnabled;
+            mDisplayPowerRequest.buttonLightsOn = mButtonLightsOn;
+            mDisplayPowerRequest.buttonLightsOffTimeout = mButtonLightsOffTimeoutSetting;
+            mDisplayPowerRequest.buttonLightsTmpBrightness = mTemporaryButtonBrightnessSettingOverride;
+            mTemporaryButtonBrightnessSettingOverride = -1;
+            mButtonLightsOn = false;
+            //------modify end------
             mDisplayReady = mDisplayManagerInternal.requestPowerState(mDisplayPowerRequest,
                     mRequestWaitForNegativeProximity);
             mRequestWaitForNegativeProximity = false;
@@ -2585,6 +2801,23 @@ public final class PowerManagerService extends SystemService
         }
     }
 
+    private final class HdmiReceiver extends BroadcastReceiver{
+    	@Override
+    	public void onReceive(Context context, Intent intent) {
+    		// TODO Auto-generated method stub
+    		synchronized (mLock) {
+    			int state = intent.getIntExtra("state", 1);
+                        Slog.d(TAG,"----------------------HdmiReceiver  state= "+state);
+    			if(state==1){
+    				mHdmiConnect=true;
+    			}else{
+    				mHdmiConnect=false;
+    				setTemporaryScreenBrightnessSettingOverrideInternal(mScreenBrightnessSetting);
+    			}
+            }
+    	}
+    }
+    
     private final class SettingsObserver extends ContentObserver {
         public SettingsObserver(Handler handler) {
             super(handler);
@@ -2618,6 +2851,11 @@ public final class PowerManagerService extends SystemService
                 case MSG_SCREEN_BRIGHTNESS_BOOST_TIMEOUT:
                     handleScreenBrightnessBoostTimeout();
                     break;
+		   case MSG_DISABLE_WIFI_FOR_WIFIP2P:
+		   	mWifiManager = (WifiManager) mContext.getSystemService(Context.WIFI_SERVICE);
+			mWifiManager.setWifiEnabled(false);
+			mWifiManager.setWifiEnabled(true);
+		   	break;
             }
         }
     }
@@ -2978,6 +3216,12 @@ public final class PowerManagerService extends SystemService
             final int uid = Binder.getCallingUid();
             final long ident = Binder.clearCallingIdentity();
             try {
+			if (reason != PowerManager.GO_TO_SLEEP_REASON_DEVICE_ADMIN && reason != PowerManager.GO_TO_SLEEP_REASON_TIMEOUT) { 
+		           if (mDisplayManager.isWfdConnect()) {
+		               mHandler.sendEmptyMessage(MSG_DISABLE_WIFI_FOR_WIFIP2P);
+		               return;
+		           }
+	      		}
                 goToSleepInternal(eventTime, reason, flags, uid);
             } finally {
                 Binder.restoreCallingIdentity(ident);
@@ -3031,6 +3275,30 @@ public final class PowerManagerService extends SystemService
                 return setLowPowerModeInternal(mode);
             } finally {
                 Binder.restoreCallingIdentity(ident);
+            }
+        }
+
+        @Override // Binder call
+        public void setPerformanceMode(int mode) {
+            final long ident = Binder.clearCallingIdentity();
+            try {
+                nativeSetPerformanceMode(mode);
+            } finally {
+                Binder.restoreCallingIdentity(ident);
+            }
+        }
+
+        /**
+         * Boost the CPU
+         * @param duration Duration to boost the CPU for, in milliseconds.
+         * @hide
+         */
+        @Override
+        public void cpuBoost(int duration) {
+            if (duration > 0 && duration <= MAX_CPU_BOOST_TIME) {
+                nativeCpuBoost(duration);
+            } else {
+                Slog.w(TAG, "Invalid boost duration: " + duration);
             }
         }
 
@@ -3270,6 +3538,13 @@ public final class PowerManagerService extends SystemService
         public boolean getLowPowerModeEnabled() {
             synchronized (mLock) {
                 return mLowPowerModeEnabled;
+            }
+        }
+
+        @Override
+        public int getLowPowerModeLimitedFunctions() {
+            synchronized (mLock) {
+                return mLowPowerModeLimitedFunctions;
             }
         }
 

@@ -45,16 +45,22 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.TextView;
+
 
 import com.android.systemui.R;
 import com.android.systemui.statusbar.BaseStatusBar;
 import com.android.systemui.statusbar.DelegateViewHelper;
 import com.android.systemui.statusbar.policy.DeadZone;
 import com.android.systemui.statusbar.policy.KeyButtonView;
+import android.os.SystemProperties;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+
+import android.widget.GridView;
+import android.widget.HorizontalScrollView;
 
 public class NavigationBarView extends LinearLayout {
     final static boolean DEBUG = false;
@@ -70,6 +76,8 @@ public class NavigationBarView extends LinearLayout {
     int mBarSize;
     boolean mVertical;
     boolean mScreenOn;
+
+    private String isEnableShowVoiceIcon = SystemProperties.get("ro.rk.systembar.voiceicon","false");
 
     boolean mShowMenu;
     int mDisabledFlags = 0;
@@ -270,6 +278,59 @@ public class NavigationBarView extends LinearLayout {
     public View getImeSwitchButton() {
         return mCurrentView.findViewById(R.id.ime_switcher);
     }
+	public View getDisplaycopyButton(){
+		return mCurrentView.findViewById(R.id.displaycopy);
+	}
+
+    public View getSubButton() {
+        return mCurrentView.findViewById(R.id.sub);
+    }
+
+    public View getAddButton() {
+        return mCurrentView.findViewById(R.id.add);
+    }
+
+	public View getPowerButton(){
+		return mCurrentView.findViewById(R.id.soft_poweroff);
+	}
+
+    public View getScreenshotButton(){
+        return mCurrentView.findViewById(R.id.screenshot);
+    } 
+     //$_rbox_$_modify_$_huangjc add bar/remove button
+     public View getHidebarButton(){
+               return mCurrentView.findViewById(R.id.hide_bar);
+       }
+       //$_rbox_$_modify_$_huangjc end
+     
+     //$_rbox_$_modify_$_huangjc add start button
+     public View getWinStartButton(){
+               return mCurrentView.findViewById(R.id.win_start);
+       }
+     //HUANGJC
+	 public LinearLayout getStatusIcons_win(){
+	    return (LinearLayout)mCurrentView.findViewById(R.id.statusIcons);
+	 }
+	 
+	  public View getNotificationView(){
+        return mCurrentView.findViewById(R.id.notification);
+    }
+
+    public TextView getNotificationCountView(){
+        return (TextView)mCurrentView.findViewById(R.id.notification_count);
+    }
+
+    public TextView getTimeView() {
+        return (TextView)mCurrentView.findViewById(R.id.system_time_tick);
+    }
+	//END
+     public HorizontalScrollView getAppsScrollView(){
+               return (HorizontalScrollView)mCurrentView.findViewById(R.id.mAppsScrollView);
+       }
+           public GridView getAppsGridView(){
+               return (GridView)mCurrentView.findViewById(R.id.mAppsGridView);
+       }
+       //$_rbox_$_modify_$_huangjc end     
 
     private void getIcons(Resources res) {
         mBackIcon = res.getDrawable(R.drawable.ic_sysbar_back);
@@ -369,6 +430,23 @@ public class NavigationBarView extends LinearLayout {
         getBackButton()   .setVisibility(disableBack       ? View.INVISIBLE : View.VISIBLE);
         getHomeButton()   .setVisibility(disableHome       ? View.INVISIBLE : View.VISIBLE);
         getRecentsButton().setVisibility(disableRecent     ? View.INVISIBLE : View.VISIBLE);
+        if ("true".equals(isEnableShowVoiceIcon)) {
+            if(getSubButton()!=null) 
+				getSubButton().setVisibility(disableHome       ? View.INVISIBLE : View.VISIBLE);
+            if(getSubButton()!=null) 
+				getAddButton().setVisibility(disableHome       ? View.INVISIBLE : View.VISIBLE);
+            if((mContext.getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT) && ((mContext.getResources().getConfiguration().screenHeightDp < 600)|| (mContext.getResources().getConfiguration().screenWidthDp < 600))) {
+                                        if(getSubButton()!=null)
+                                        getSubButton().setVisibility(View.GONE);
+                                        if(getAddButton()!=null)
+                                        getAddButton().setVisibility(View.GONE);
+            }
+         } else {
+            if(getSubButton()!=null) 
+				getSubButton().setVisibility(View.GONE);
+            if(getSubButton()!=null) 
+				getAddButton().setVisibility(View.GONE);
+        }
 
         mBarTransitions.applyBackButtonQuiescentAlpha(mBarTransitions.getMode(), true /*animate*/);
     }

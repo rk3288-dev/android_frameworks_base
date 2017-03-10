@@ -76,7 +76,9 @@ import android.widget.ImageView;
 import android.widget.ImageView.ScaleType;
 import android.widget.ListView;
 import android.widget.TextView;
-
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -272,6 +274,77 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
             }
             if (GLOBAL_ACTION_KEY_POWER.equals(actionKey)) {
                 mItems.add(new PowerAction());
+				// reboot
+				mItems.add(
+					new SinglePressAction(
+						com.android.internal.R.drawable.ic_lock_reboot,
+						R.string.global_action_reboot) {      
+		
+					public void onPress() { 
+						// reboot 
+						mWindowManagerFuncs.reboot();
+					}
+		
+					public boolean showDuringKeyguard() { 
+						return true;
+					}        
+		
+					public boolean showBeforeProvisioning() { 
+						return true; 
+					}
+				});
+				mItems.add(
+					new SinglePressAction(
+                    	com.android.internal.R.drawable.ic_lock_firefly_sleep,
+                    	R.string.global_action_firefly_sleep) {
+
+	                public void onPress() {
+    	                // shutdown by making sure radio and power are handled accordingly.
+        	            mWindowManagerFuncs.firefly_sleep(SystemClock.uptimeMillis());
+            	    }
+                
+                	public boolean onLongPress() {
+                    	return true;
+                	}
+                
+                	public boolean showDuringKeyguard() {
+                    	return true;
+                	}
+
+                	public boolean showBeforeProvisioning() {
+                    	return true;
+                	}
+            	});
+            
+	        	try{
+	            	File f=new File("/dev/block/mtd/by-name/linuxroot");
+	            	if(f.exists()){
+	                 	// next: Ubuntu switch
+	                	mItems.add(
+	                    	new SinglePressAction(
+	                            com.android.internal.R.drawable.ic_lock_firefly_ubuntu,
+	                            R.string.global_action_firefly_switch_system) {
+
+	                        public void onPress() {
+	                            mWindowManagerFuncs.firefly_switch_system(false);
+	                        }
+                        
+	                        public boolean onLongPress() {
+	                            return true;
+	                        }
+                        
+	                        public boolean showDuringKeyguard() {
+	                            return true;
+	                        }
+
+	                        public boolean showBeforeProvisioning() {
+	                            return true;
+	                        }
+	                    });
+	            	}  
+	        	} catch(Exception e) {
+	        	}
+
             } else if (GLOBAL_ACTION_KEY_AIRPLANE.equals(actionKey)) {
                 mItems.add(mAirplaneModeOn);
             } else if (GLOBAL_ACTION_KEY_BUGREPORT.equals(actionKey)) {
@@ -414,7 +487,7 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
     }
 
     private Action getSettingsAction() {
-        return new SinglePressAction(com.android.internal.R.drawable.ic_settings,
+        return new SinglePressAction(com.android.internal.R.drawable.ic_lock_settings,
                 R.string.global_action_settings) {
 
             @Override
@@ -514,7 +587,11 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
 
     private void prepareDialog() {
         refreshSilentMode();
-        mAirplaneModeOn.updateState(mAirplaneState);
+        boolean inAirplaneMode = Settings.System.getInt(mContext.getContentResolver(),
+		Settings.System.AIRPLANE_MODE_ON, 0) == 1;
+	    mAirplaneState = inAirplaneMode ? ToggleAction.State.On : ToggleAction.State.Off;
+        mAirplaneModeOn.updateState(mAirplaneState);//
+        changeAirplaneModeSystemSetting(inAirplaneMode);
         mAdapter.notifyDataSetChanged();
         mDialog.getWindow().setType(WindowManager.LayoutParams.TYPE_KEYGUARD_DIALOG);
         if (mShowSilentToggle) {
@@ -844,7 +921,7 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
         public final void onPress() {
             if (mState.inTransition()) {
                 Log.w(TAG, "shouldn't be able to toggle when in transition");
-                return;
+				return;
             }
 
             final boolean nowOn = !(mState == State.On);
@@ -853,7 +930,8 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
         }
 
         public boolean isEnabled() {
-            return !mState.inTransition();
+            //return !mState.inTransition();
+			return true;
         }
 
         /**
@@ -995,8 +1073,11 @@ class GlobalActions implements DialogInterface.OnDismissListener, DialogInterfac
         @Override
         public void onServiceStateChanged(ServiceState serviceState) {
             if (!mHasTelephony) return;
-            final boolean inAirplaneMode = serviceState.getState() == ServiceState.STATE_POWER_OFF;
-            mAirplaneState = inAirplaneMode ? ToggleAction.State.On : ToggleAction.State.Off;
+            boolean inAirplaneMode = serviceState.getState() == ServiceState.STATE_POWER_OFF;
+		    inAirplaneMode = Settings.System.getInt(mContext.getContentResolver(),
+			Settings.System.AIRPLANE_MODE_ON, 0) == 1;
+		    mAirplaneState = inAirplaneMode ? ToggleAction.State.On : ToggleAction.State.Off;
+
             mAirplaneModeOn.updateState(mAirplaneState);
             mAdapter.notifyDataSetChanged();
         }

@@ -456,4 +456,9 @@ interface IPackageManager {
     KeySet getSigningKeySet(String packageName);
     boolean isPackageSignedByKeySet(String packageName, in KeySet ks);
     boolean isPackageSignedByKeySetExactly(String packageName, in KeySet ks);
+
+    int getPackagePerformanceMode(String pkgName);
+    void setPackagePerformanceMode(String pkgName, int mode);
+
+    boolean setAppMultiWindowMode(String pkgName, boolean phonemode, boolean halfscreenmode);
 }

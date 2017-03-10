@@ -43,6 +43,7 @@
        <item><xliff:g id="id">phone_signal</xliff:g></item>
        <item><xliff:g id="id">battery</xliff:g></item>
        <item><xliff:g id="id">alarm_clock</xliff:g></item>
+	   <item><xliff:g id="id">headset</xliff:g></item>
        <item><xliff:g id="id">secure</xliff:g></item>
        <item><xliff:g id="id">clock</xliff:g></item>
     </string-array>
@@ -171,6 +172,17 @@
          ActivityManager based on screen size. -->
     <integer name="config_extraFreeKbytesAdjust">0</integer>
 
+    <!-- The maximum number of cached processes we will keep around before killing them.
+         NOTE: this constant is *only* a control to not let us go too crazy with
+         keeping around processes on devices with large amounts of RAM.  For devices that
+         are tighter on RAM, the out of memory killer is responsible for killing background
+         processes as RAM is needed, and we should *never* be relying on this limit to
+         kill them.  Also note that this limit only applies to cached background processes;
+         we have no limit on the number of service, visible, foreground, or other such
+         processes and the number of those processes does not count against the cached
+         process limit. -->
+    <integer name="config_maxCachedApps">32</integer>
+
     <!-- The duration (in milliseconds) that the radio will scan for a signal
          when there's no network connection. If the scan doesn't timeout, use zero -->
     <integer name="config_radioScanningTimeout">0</integer>
@@ -199,6 +211,7 @@
         <item>"wifi_p2p,13,1,0,-1,true"</item>
         <item>"mobile_ia,14,0,2,-1,true"</item>
         <item>"mobile_emergency,15,0,2,-1,true"</item>
+        <item>"bluetooth,7,7,1,60000,true"</item>
     </string-array>
 
     <!-- Array of ConnectivityManager.TYPE_xxxx constants for networks that may only
@@ -241,12 +254,14 @@
          USB interfaces.  If the device doesn't want to support tething over USB this should
          be empty.  An example would be "usb.*" -->
     <string-array translatable="false" name="config_tether_usb_regexs">
+		<item>"rndis0"</item>
     </string-array>
 
     <!-- List of regexpressions describing the interface (if any) that represent tetherable
          Wifi interfaces.  If the device doesn't want to support tethering over Wifi this
          should be empty.  An example would be "softap.*" -->
     <string-array translatable="false" name="config_tether_wifi_regexs">
+		<item>"wlan0"</item>
     </string-array>
 
     <!-- List of regexpressions describing the interface (if any) that represent tetherable
@@ -259,6 +274,7 @@
          bluetooth interfaces.  If the device doesn't want to support tethering over bluetooth this
          should be empty. -->
     <string-array translatable="false" name="config_tether_bluetooth_regexs">
+        <item>"bt-pan"</item>
     </string-array>
 
     <!-- Max number of Bluetooth tethering connections allowed. If this is
@@ -487,7 +503,10 @@
     <bool translatable="false" name="config_wifi_batched_scan_supported">false</bool>
 
     <!-- Flag indicating whether the we should enable the automatic brightness in Settings.
-         Software implementation will be used if config_hardware_auto_brightness_available is not set -->
+         Software implementation will be used if config_hardware_auto_brightness_available is not set
+
+         Note: This value is ignored if the platform does not have the system feature
+               PackageManager.FEATURE_SENSOR_LIGHT -->
     <bool name="config_automatic_brightness_available">false</bool>
 
     <!-- Don't name config resources like this.  It should look like config_annoyDianne -->
@@ -637,7 +656,7 @@
          if the sensor HAL correctly handles the proximity sensor as a wake-up source.
          Otherwise, the device may fail to wake out of suspend reliably.
          The default is false. -->
-    <bool name="config_suspendWhenScreenOffDueToProximity">false</bool>
+    <bool name="config_suspendWhenScreenOffDueToProximity">true</bool>
 
     <!-- Control the behavior when the user long presses the power button.
             0 - Nothing
@@ -831,7 +850,7 @@
          This needs to match the constants in
          policy/src/com/android/internal/policy/impl/PhoneWindowManager.java
     -->
-    <integer name="config_longPressOnHomeBehavior">0</integer>
+    <integer name="config_longPressOnHomeBehavior">1</integer>
 
     <!-- Control the behavior when the user double-taps the home button.
             0 - Nothing
@@ -858,7 +877,10 @@
          that can be set by the user. -->
     <integer name="config_screenBrightnessDoze">1</integer>
 
-    <!-- Allow automatic adjusting of the screen brightness while dozing in low power state. -->
+    <!-- Allow automatic adjusting of the screen brightness while dozing in low power state.
+
+         Note: This value is ignored if the platform does not have the system feature
+               PackageManager.FEATURE_SENSOR_LIGHT -->
     <bool name="config_allowAutoBrightnessWhileDozing">false</bool>
 
     <!-- If we allow automatic adjustment of screen brightness while dozing, how many times we want
@@ -1594,11 +1616,11 @@
          * The remote submix module "audio.r_submix.default" must be installed on the device.
          * The device must be provisioned with HDCP keys (for protected content).
     -->
-    <bool name="config_enableWifiDisplay">false</bool>
+    <bool name="config_enableWifiDisplay">true</bool>
 
     <!-- When true use the linux /dev/input/event subsystem to detect the switch changes
          on the headphone/microphone jack. When false use the older uevent framework. -->
-    <bool name="config_useDevInputEventForAudioJack">false</bool>
+    <bool name="config_useDevInputEventForAudioJack">true</bool>
 
     <!-- Whether safe headphone volume is enabled or not (country specific). -->
     <bool name="config_safe_media_volume_enabled">true</bool>
@@ -2028,4 +2050,22 @@
 
     <!-- Whether to start in touch mode -->
     <bool name="config_defaultInTouchMode">true</bool>
+
+    <!--$_rbox_$_modify_$_lijiehong_$_20120319_$-->
+    <!--$_rbox_$_modify_$_begin-->
+    <!-- A product with no SD card == not removable. --> 
+    <bool name="config_secondVolumeStorageRemovable" product="nosdcard">false</bool>
+    <!-- Configures whether the primary second volume storage device is
+         removable.  For example, if second volume storage is on an SD card,
+         it is removable; if it is built in to the device, it is not removable.
+         The default product has second volume storage on an SD card, which is
+         removable. -->
+    <bool name="config_secondVolumeStorageRemovable" product="default">true</bool>
+    <!--$_rbox_$_modify_$_end-->
+
+    <!--Whether non-data sim can(true) send mms or not(false)-->
+    <bool name="config_non_data_sim_mms_supported">true</bool>
+    <!--Make system animation scale configurable -->
+    <string translatable="false" name="config_window_animation_scale">1.0</string>
+    <string translatable="false" name="config_transition_animation_scale">1.0</string>
 </resources>

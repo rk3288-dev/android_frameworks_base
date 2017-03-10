@@ -92,7 +92,7 @@ public class AudioTrack
     /** Minimum value for sample rate */
     private static final int SAMPLE_RATE_HZ_MIN = 4000;
     /** Maximum value for sample rate */
-    private static final int SAMPLE_RATE_HZ_MAX = 96000;
+    private static final int SAMPLE_RATE_HZ_MAX = 192000;
 
     /** Maximum value for AudioTrack channel count */
     private static final int CHANNEL_COUNT_MAX = 8;
@@ -116,6 +116,7 @@ public class AudioTrack
      */
     public static final int MODE_STREAM = 1;
 
+    public static final int MODE_STREAM_DIRECT = 2;
     /**
      * State of an AudioTrack that was not successfully initialized upon creation.
      */
@@ -528,7 +529,7 @@ public class AudioTrack
 
         //--------------
         // audio load mode
-        if (((mode != MODE_STREAM) && (mode != MODE_STATIC)) ||
+        if (((mode != MODE_STREAM) && (mode != MODE_STATIC) && (mode != MODE_STREAM_DIRECT)) ||
                 ((mode != MODE_STREAM) && !AudioFormat.isEncodingLinearPcm(mAudioFormat))) {
             throw new IllegalArgumentException("Invalid mode.");
         }

@@ -51,11 +51,13 @@ import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.ResultReceiver;
 import android.os.ServiceManager;
+import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.speech.RecognizerIntent;
 import android.text.TextUtils;
 import android.util.Log;
+import android.util.Slog;
 import android.util.SparseArray;
 import android.view.KeyEvent;
 
@@ -715,11 +717,19 @@ public class MediaSessionService extends SystemService implements Monitor {
                 Log.w(TAG, "Attempted to dispatch null or non-media key event.");
                 return;
             }
+
             final int pid = Binder.getCallingPid();
             final int uid = Binder.getCallingUid();
             final long token = Binder.clearCallingIdentity();
-
             try {
+                if (!isUserSetupComplete()) {
+                    // Global media key handling can have the side-effect of starting new
+                    // activities which is undesirable while setup is in progress.
+                    Slog.i(TAG, "Not dispatching media key event because user "
+                            + "setup is in progress.");
+                    return;
+                }
+
                 synchronized (mLock) {
                     // If we don't have a media button receiver to fall back on
                     // include non-playing sessions for dispatching
@@ -832,13 +842,21 @@ public class MediaSessionService extends SystemService implements Monitor {
 
             }
             boolean preferSuggestedStream = false;
+
+            if (SystemProperties.get("fm.on", "false").equals("true")) {
+                suggestedStream = AudioManager.STREAM_MUSIC;
+                preferSuggestedStream = true;
+            }
+
             if (isValidLocalStreamType(suggestedStream)
                     && AudioSystem.isStreamActive(suggestedStream, 0)) {
                 preferSuggestedStream = true;
             }
+
             if (session == null || preferSuggestedStream) {
                 if ((flags & AudioManager.FLAG_ACTIVE_MEDIA_ONLY) != 0
-                        && !AudioSystem.isStreamActive(AudioManager.STREAM_MUSIC, 0)) {
+                        && !AudioSystem.isStreamActive(AudioManager.STREAM_MUSIC, 0)
+                        && SystemProperties.get("fm.on", "false").equals("false")) {
                     if (DEBUG) {
                         Log.d(TAG, "No active session to adjust, skipping media only volume event");
                     }
@@ -1005,6 +1023,11 @@ public class MediaSessionService extends SystemService implements Monitor {
 
         private boolean isVoiceKey(int keyCode) {
             return keyCode == KeyEvent.KEYCODE_HEADSETHOOK;
+        }
+
+        private boolean isUserSetupComplete() {
+            return Settings.Secure.getIntForUser(getContext().getContentResolver(),
+                    Settings.Secure.USER_SETUP_COMPLETE, 0, UserHandle.USER_CURRENT) != 0;
         }
 
         // we only handle public stream types, which are 0-5

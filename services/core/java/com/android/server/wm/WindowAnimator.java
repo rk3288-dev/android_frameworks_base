@@ -46,6 +46,8 @@ import com.android.server.wm.WindowManagerService.LayoutFields;
 
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import android.provider.Settings;
+import android.view.View;
 
 /**
  * Singleton class that carries out the animations and Surface operations in a separate task
@@ -676,8 +678,15 @@ public class WindowAnimator {
 
                 final WindowList windows = mService.getWindowListLocked(displayId);
                 final int N = windows.size();
-                for (int j = 0; j < N; j++) {
+                for (int j = N-1; j >= 0; j--) {
                     windows.get(j).mWinAnimator.prepareSurfaceLocked(true);
+					WindowState ww = windows.get(j);
+					ww.setSmallLayer(ww.mLayer);
+					if(/*ww.mSurfaceViewBackWindow != null || */ww.hasBackWindow()){
+						//ww.mSurfaceViewBackWindow.SetLayer(ww.mLayer- 2);
+						ww.setLayer();
+						//mService.setSurfaceViewBackWindowShow(ww);
+					}				
                 }
             }
 
@@ -824,12 +833,16 @@ public class WindowAnimator {
         if (displayId < 0) {
             return 0;
         }
-        return mService.getDisplayContentLocked(displayId).pendingLayoutChanges;
+        DisplayContent displayContent = mService.getDisplayContentLocked(displayId);
+        return (displayContent != null) ? displayContent.pendingLayoutChanges : 0;
     }
 
     void setPendingLayoutChanges(final int displayId, final int changes) {
         if (displayId >= 0) {
-            mService.getDisplayContentLocked(displayId).pendingLayoutChanges |= changes;
+            DisplayContent displayContent = mService.getDisplayContentLocked(displayId);
+            if (displayContent != null) {
+                displayContent.pendingLayoutChanges |= changes;
+            }
         }
     }
 

@@ -1568,7 +1568,13 @@ public abstract class PackageManager {
      */
     @SdkConstant(SdkConstantType.FEATURE)
     public static final String FEATURE_ETHERNET = "android.hardware.ethernet";
-
+//add by blb
+    /**
+     * @hide
+     */
+    @SdkConstant(SdkConstantType.FEATURE)
+    public static final String FEATURE_PPPOE = "android.software.pppoe";
+//end add
     /**
      * Feature for {@link #getSystemAvailableFeatures} and
      * {@link #hasSystemFeature}: This device supports HDMI-CEC.
@@ -4104,4 +4110,23 @@ public abstract class PackageManager {
             }
         }
     }
+
+    /**
+     * @hide
+     */
+    public abstract int getPackagePerformanceMode(String pkgName);
+
+    /**
+     * @hide
+     */
+    public abstract void setPackagePerformanceMode(String pkgName, int mode);
+
+    /**
+     * set app window mode in multiwindow
+     * @param pkgName
+     * @param phonemode
+     * @param halfscreenmode
+     * @return
+     */
+    public abstract boolean setAppMultiWindowMode(String pkgName, boolean phonemode, boolean halfscreenmode);
 }

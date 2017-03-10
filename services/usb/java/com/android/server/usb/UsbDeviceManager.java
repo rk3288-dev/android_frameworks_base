@@ -99,7 +99,7 @@ public class UsbDeviceManager {
     // Delay for debouncing USB disconnects.
     // We often get rapid connect/disconnect events when enabling USB functions,
     // which need debouncing.
-    private static final int UPDATE_DELAY = 1000;
+    private static final int UPDATE_DELAY = 50;
 
     // Time we received a request to enter USB accessory mode
     private long mAccessoryModeRequestTime = 0;
@@ -112,6 +112,7 @@ public class UsbDeviceManager {
 
     private UsbHandler mHandler;
     private boolean mBootCompleted;
+    private boolean mUsbTetheringEnable = false;
 
     private final Object mLock = new Object();
 
@@ -312,6 +313,7 @@ public class UsbDeviceManager {
 
         // current USB state
         private boolean mConnected;
+        private boolean mLocaleChanged = false;
         private boolean mConfigured;
         private String mCurrentFunctions;
         private String mDefaultFunctions;
@@ -335,6 +337,18 @@ public class UsbDeviceManager {
                 mHandler.obtainMessage(MSG_USER_SWITCHED, userId, 0).sendToTarget();
             }
         };
+
+        //add by huangjc:update AdbNotification's language when Locale Changed. 
+		private final BroadcastReceiver mLocaleChangedReceiver = new BroadcastReceiver() {
+			 @Override
+		     public void onReceive(Context context, Intent intent) {
+			    if (DEBUG) Slog.d(TAG, "-------Locale Changed for adb-----");
+				mLocaleChanged = true;
+                            updateUsbNotification();
+			    updateAdbNotification();
+			}
+		};
+        //add-end
 
         public UsbHandler(Looper looper) {
             super(looper);
@@ -385,6 +399,8 @@ public class UsbDeviceManager {
                 mContext.registerReceiver(mBootCompletedReceiver, filter);
                 mContext.registerReceiver(
                         mUserSwitchedReceiver, new IntentFilter(Intent.ACTION_USER_SWITCHED));
+                mContext.registerReceiver(
+                        mLocaleChangedReceiver, new IntentFilter(Intent.ACTION_LOCALE_CHANGED));
             } catch (Exception e) {
                 Slog.e(TAG, "Error initializing UsbHandler", e);
             }
@@ -585,6 +601,13 @@ public class UsbDeviceManager {
                 }
             }
 
+           boolean isMassStorage = containsFunction(mCurrentFunctions,
+                    UsbManager.USB_FUNCTION_MASS_STORAGE);
+            Slog.d(TAG, "Usb state is " + mConnected + " " + mConfigured + " " + isMassStorage);
+            if (mConnected && isMassStorage)
+                SystemProperties.set("sys.usb.umsavailible", "true");
+            else
+                SystemProperties.set("sys.usb.umsavailible", "false");
             if (DEBUG) Slog.d(TAG, "broadcasting " + intent + " connected: " + mConnected
                                     + " configured: " + mConfigured);
             mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
@@ -631,7 +654,7 @@ public class UsbDeviceManager {
                     if (containsFunction(mCurrentFunctions,
                             UsbManager.USB_FUNCTION_ACCESSORY)) {
                         updateCurrentAccessory();
-                    } else if (!mConnected) {
+                    } else if (!mConnected && !mUsbTetheringEnable) {
                         // restore defaults when USB is disconnected
                         setEnabledFunctions(getDefaultFunctions(), false);
                     }
@@ -695,7 +718,7 @@ public class UsbDeviceManager {
         }
 
         private void updateUsbNotification() {
-            if (mNotificationManager == null || !mUseUsbNotification) return;
+            if (mNotificationManager == null /*|| !mUseUsbNotification*/) return;//show notification in mtp mode
             int id = 0;
             Resources r = mContext.getResources();
             if (mConnected) {
@@ -705,7 +728,7 @@ public class UsbDeviceManager {
                     id = com.android.internal.R.string.usb_ptp_notification_title;
                 } else if (containsFunction(mCurrentFunctions,
                         UsbManager.USB_FUNCTION_MASS_STORAGE)) {
-                    id = com.android.internal.R.string.usb_cd_installer_notification_title;
+                   // id = com.android.internal.R.string.usb_cd_installer_notification_title;//do not show notification when UMS
                 } else if (containsFunction(mCurrentFunctions, UsbManager.USB_FUNCTION_ACCESSORY)) {
                     id = com.android.internal.R.string.usb_accessory_notification_title;
                 } else {
@@ -713,6 +736,14 @@ public class UsbDeviceManager {
                     //if (!containsFunction(mCurrentFunctions, UsbManager.USB_FUNCTION_RNDIS)) {
                     //    Slog.e(TAG, "No known USB function in updateUsbNotification");
                     //}
+                }
+
+                if(mLocaleChanged){
+                  if (mUsbNotificationId != 0) {
+                    mNotificationManager.cancelAsUser(null, mUsbNotificationId,
+                            UserHandle.ALL);
+                    mUsbNotificationId = 0;
+                  }
                 }
             }
             if (id != mUsbNotificationId) {
@@ -759,6 +790,10 @@ public class UsbDeviceManager {
             if (mAdbEnabled && mConnected) {
                 if ("0".equals(SystemProperties.get("persist.adb.notify"))) return;
 
+                if (mLocaleChanged) {
+					mAdbNotificationShown = false;
+				    mNotificationManager.cancelAsUser(null, id, UserHandle.ALL);
+				}
                 if (!mAdbNotificationShown) {
                     Resources r = mContext.getResources();
                     CharSequence title = r.getText(id);
@@ -787,6 +822,7 @@ public class UsbDeviceManager {
                     mAdbNotificationShown = true;
                     mNotificationManager.notifyAsUser(null, id, notification,
                             UserHandle.ALL);
+					mLocaleChanged = false;
                 }
             } else if (mAdbNotificationShown) {
                 mAdbNotificationShown = false;
@@ -846,6 +882,10 @@ public class UsbDeviceManager {
 
     public void setCurrentFunctions(String functions, boolean makeDefault) {
         if (DEBUG) Slog.d(TAG, "setCurrentFunctions(" + functions + ") default: " + makeDefault);
+        if (functions != null && functions.equals(UsbManager.USB_FUNCTION_RNDIS))
+            mUsbTetheringEnable = true;
+        else
+            mUsbTetheringEnable = false;
         mHandler.sendMessage(MSG_SET_CURRENT_FUNCTIONS, functions, makeDefault);
     }
 

@@ -37,4 +37,17 @@
         <item>157</item><item>334</item>
         <item>0</item>  <item>334</item>
     </array>
+    
+<array name="channelmodel">
+        <item>Remove status bar</item>
+        <item>close the app</item>
+    </array>
+ 
+    <array name="config_multi_dialog_chose">
+        <item>Static screenshot</item>
+        <item>Dynamic screenshot</item>
+        <item>Whole screenshot</item>
+        <item>Comment mode</item>
+    </array>
+
 </resources>

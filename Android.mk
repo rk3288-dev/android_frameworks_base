@@ -57,6 +57,7 @@ LOCAL_SRC_FILES += \
 ##
 ## READ ME: ########################################################
 LOCAL_SRC_FILES += \
+	core/java/android/hardware/ISensorManager.aidl \
 	core/java/android/accessibilityservice/IAccessibilityServiceConnection.aidl \
 	core/java/android/accessibilityservice/IAccessibilityServiceClient.aidl \
 	core/java/android/accounts/IAccountManager.aidl \
@@ -177,6 +178,7 @@ LOCAL_SRC_FILES += \
 	core/java/android/net/IConnectivityManager.aidl \
 	core/java/android/net/IEthernetManager.aidl \
 	core/java/android/net/IEthernetServiceListener.aidl \
+        core/java/android/net/pppoe/IPppoeManager.aidl \
 	core/java/android/net/INetworkManagementEventObserver.aidl \
 	core/java/android/net/INetworkPolicyListener.aidl \
 	core/java/android/net/INetworkPolicyManager.aidl \
@@ -246,6 +248,7 @@ LOCAL_SRC_FILES += \
 	core/java/android/view/IInputFilterHost.aidl \
 	core/java/android/view/IOnKeyguardExitResult.aidl \
 	core/java/android/view/IRotationWatcher.aidl \
+        core/java/android/view/IAppAlignWatcher.aidl \
 	core/java/android/view/IWindow.aidl \
 	core/java/android/view/IWindowFocusObserver.aidl \
 	core/java/android/view/IWindowId.aidl \
@@ -389,6 +392,7 @@ LOCAL_SRC_FILES += \
 	packages/services/PacProcessor/com/android/net/IProxyService.aidl \
 	packages/services/Proxy/com/android/net/IProxyCallback.aidl \
 	packages/services/Proxy/com/android/net/IProxyPortListener.aidl \
+	core/java/android/os/IDisplayDeviceManagementService.aidl \
 
 # FRAMEWORKS_BASE_JAVA_SRC_DIRS comes from build/core/pathmap.mk
 LOCAL_AIDL_INCLUDES += $(FRAMEWORKS_BASE_JAVA_SRC_DIRS)
@@ -400,7 +404,9 @@ LOCAL_INTERMEDIATE_SOURCES := \
 
 LOCAL_NO_STANDARD_LIBRARIES := true
 LOCAL_JAVA_LIBRARIES := core-libart conscrypt okhttp core-junit bouncycastle ext
-
+#$_media_$_modify_$_Martin.Cheng@rock-chips.com
+LOCAL_STATIC_JAVA_LIBRARIES := libsubtitle multiwindowcore
+#$_media_$_modify_$_end
 LOCAL_MODULE := framework
 
 LOCAL_DX_FLAGS := --core-library --multi-dex
@@ -409,6 +415,15 @@ LOCAL_RMTYPEDEFS := true
 
 include $(BUILD_JAVA_LIBRARY)
 framework_module := $(LOCAL_INSTALLED_MODULE)
+
+#$_media_$_modify_$_Martin.Cheng@rock-chips.com
+include $(CLEAR_VARS)
+LOCAL_MODULE :=
+LOCAL_MODULE_CLASS :=
+LOCAL_PREBUILT_STATIC_JAVA_LIBRARIES := libsubtitle:third-party/subtitle.jar \
+                                        multiwindowcore:multiwindow/multiwindowcore.jar
+include $(BUILD_MULTI_PREBUILT)
+#$_media_$_modify_$_end
 
 # Make sure that R.java and Manifest.java are built before we build
 # the source for this library.
@@ -426,6 +441,7 @@ framework_built := $(call java-lib-deps,framework)
 include $(CLEAR_VARS)
 
 aidl_files := \
+	frameworks/base/core/java/android/hardware/SensorParcel.aidl \
 	frameworks/base/telephony/java/android/telephony/ServiceState.aidl \
 	frameworks/base/telephony/java/android/telephony/CellInfo.aidl \
 	frameworks/base/telephony/java/android/telephony/SignalStrength.aidl \

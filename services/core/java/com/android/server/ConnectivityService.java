@@ -24,6 +24,7 @@ import static android.net.ConnectivityManager.TYPE_NONE;
 import static android.net.ConnectivityManager.TYPE_VPN;
 import static android.net.ConnectivityManager.getNetworkTypeName;
 import static android.net.ConnectivityManager.isNetworkTypeValid;
+import static android.net.NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED;
 import static android.net.NetworkPolicyManager.RULE_ALLOW_ALL;
 import static android.net.NetworkPolicyManager.RULE_REJECT_METERED;
 
@@ -89,6 +90,7 @@ import android.provider.Settings;
 import android.security.Credentials;
 import android.security.KeyStore;
 import android.telephony.TelephonyManager;
+import android.telephony.SubscriptionManager;
 import android.text.TextUtils;
 import android.util.Slog;
 import android.util.SparseArray;
@@ -852,8 +854,16 @@ public class ConnectivityService extends IConnectivityManager.Stub
         Network network = null;
         String subscriberId = null;
 
-        NetworkAgentInfo nai = mNetworkForRequestId.get(mDefaultRequest.requestId);
+        NetworkAgentInfo nai;
 
+	try{
+		nai = mNetworkForRequestId.get(mDefaultRequest.requestId);
+	} catch (Exception e) {
+            e.printStackTrace();
+	    	
+	    return null;
+
+	}
         final Network[] networks = getVpnUnderlyingNetworks(uid);
         if (networks != null) {
             // getUnderlyingNetworks() returns:
@@ -2311,6 +2321,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 // there is hope for it to become one if it validated, then it is needed.
                 if (nri.isRequest && nai.satisfies(nri.request) &&
                         (nai.networkRequests.get(nri.request.requestId) != null ||
+                        (mNetworkForRequestId.get(nri.request.requestId) != null &&
                         // Note that this catches two important cases:
                         // 1. Unvalidated cellular will not be reaped when unvalidated WiFi
                         //    is currently satisfying the request.  This is desirable when
@@ -2319,7 +2330,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                         //    is currently satsifying the request.  This is desirable when
                         //    WiFi ends up validating and out scoring cellular.
                         mNetworkForRequestId.get(nri.request.requestId).getCurrentScore() <
-                                nai.getCurrentScoreAsValidated())) {
+                                nai.getCurrentScoreAsValidated()))) {
                     unneeded = false;
                     break;
                 }
@@ -2628,9 +2639,18 @@ public class ConnectivityService extends IConnectivityManager.Stub
             mNetTransitionWakeLock.acquire();
             mNetTransitionWakeLockCausedBy = forWhom;
         }
-        mHandler.sendMessageDelayed(mHandler.obtainMessage(
+        if (Settings.Global.getInt(mContext.getContentResolver(),
+            Settings.Global.WIFI_SLEEP_POLICY, 2)
+                == Settings.Global.WIFI_SLEEP_POLICY_INTELLIGENT) {
+            log("Wifi intelligent sleep: try to lock 3S to wait new network connection.");
+            mHandler.sendMessageDelayed(mHandler.obtainMessage(
+                EVENT_EXPIRE_NET_TRANSITION_WAKELOCK, serialNum, 0),
+                3000);
+        } else {
+            mHandler.sendMessageDelayed(mHandler.obtainMessage(
                 EVENT_EXPIRE_NET_TRANSITION_WAKELOCK, serialNum, 0),
                 mNetTransitionWakeLockTimeout);
+        }
         return;
     }
 
@@ -3900,6 +3920,16 @@ public class ConnectivityService extends IConnectivityManager.Stub
     private void updateCapabilities(NetworkAgentInfo networkAgent,
             NetworkCapabilities networkCapabilities) {
         if (!Objects.equals(networkAgent.networkCapabilities, networkCapabilities)) {
+            if (networkAgent.networkCapabilities.hasCapability(NET_CAPABILITY_NOT_RESTRICTED) !=
+                    networkCapabilities.hasCapability(NET_CAPABILITY_NOT_RESTRICTED)) {
+                try {
+                    mNetd.setNetworkPermission(networkAgent.network.netId,
+                            networkCapabilities.hasCapability(NET_CAPABILITY_NOT_RESTRICTED) ?
+                                    null : NetworkManagementService.PERMISSION_SYSTEM);
+                } catch (RemoteException e) {
+                    loge("Exception in setNetworkPermission: " + e);
+                }
+            }
             synchronized (networkAgent) {
                 networkAgent.networkCapabilities = networkCapabilities;
             }
@@ -4098,10 +4128,25 @@ public class ConnectivityService extends IConnectivityManager.Stub
                     newNetwork.addRequest(nri.request);
                     continue;
                 }
-
+                final int networkType = newNetwork.networkInfo.getType();
+                if (mDefaultRequest.requestId == nri.request.requestId &&
+                            networkType == ConnectivityManager.TYPE_MOBILE) {
+                    final int dds = SubscriptionManager.getDefaultDataSubId();
+                    final String subscriberId = newNetwork.networkMisc.subscriberId;
+                    // if mobile data is disabled or newNetwork works on non-data SIM, we ignore default request
+                    if (!(subscriberId != null &&
+                            subscriberId.equals(mTelephonyManager.getSubscriberId(dds)) &&
+                            mTelephonyManager.getDataEnabled())) {
+                        loge("ignore default request, dds=" + dds
+                                    + ", newNetwork subscriberId=" + subscriberId
+                                    + ", dds subscriberId=" + mTelephonyManager.getSubscriberId(dds)
+                                    + ", data enabled=" + mTelephonyManager.getDataEnabled());
+                        continue;
+                    }
+                }
                 // next check if it's better than any current network we're using for
                 // this request
-                if (VDBG) {
+                if (DBG) {
                     log("currentScore = " +
                             (currentNetwork != null ? currentNetwork.getCurrentScore() : 0) +
                             ", newScore = " + newNetwork.getCurrentScore());
@@ -4329,7 +4374,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
                             (networkAgent.networkMisc == null ||
                                 !networkAgent.networkMisc.allowBypass));
                 } else {
-                    mNetd.createPhysicalNetwork(networkAgent.network.netId);
+                    mNetd.createPhysicalNetwork(networkAgent.network.netId,
+                            networkAgent.networkCapabilities.hasCapability(
+                                    NET_CAPABILITY_NOT_RESTRICTED) ?
+                                    null : NetworkManagementService.PERMISSION_SYSTEM);
                 }
             } catch (Exception e) {
                 loge("Error creating network " + networkAgent.network.netId + ": "

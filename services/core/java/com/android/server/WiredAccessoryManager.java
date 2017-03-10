@@ -29,6 +29,7 @@ import android.os.UEventObserver;
 import android.util.Slog;
 import android.media.AudioManager;
 import android.util.Log;
+import android.os.SystemProperties;
 import android.view.InputDevice;
 
 import com.android.internal.R;
@@ -63,15 +64,19 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
     private static final int BIT_USB_HEADSET_DGTL = (1 << 3);
     private static final int BIT_HDMI_AUDIO = (1 << 4);
     private static final int BIT_LINEOUT = (1 << 5);
+    private static final int BIT_USB_DEVICE_AUDIO_PLAYBACK = (1 << 6);
+    private static final int BIT_USB_DEVICE_AUDIO_CAPTURE = (1 << 7);
     private static final int SUPPORTED_HEADSETS = (BIT_HEADSET|BIT_HEADSET_NO_MIC|
                                                    BIT_USB_HEADSET_ANLG|BIT_USB_HEADSET_DGTL|
-                                                   BIT_HDMI_AUDIO|BIT_LINEOUT);
+                                                   BIT_HDMI_AUDIO|BIT_LINEOUT|BIT_USB_DEVICE_AUDIO_PLAYBACK|
+                                                   BIT_USB_DEVICE_AUDIO_CAPTURE);
 
     private static final String NAME_H2W = "h2w";
     private static final String NAME_USB_AUDIO = "usb_audio";
     private static final String NAME_HDMI_AUDIO = "hdmi_audio";
     private static final String NAME_HDMI = "hdmi";
-
+    private static final String NAME_USB_AUDIO_PLAYBACK = "usb_audio_playback";
+    private static final String NAME_USB_AUDIO_CAPTURE = "usb_audio_capture";
     private static final int MSG_NEW_DEVICE_STATE = 1;
     private static final int MSG_SYSTEM_READY = 2;
 
@@ -89,10 +94,16 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
 
     private final boolean mUseDevInputEventForAudioJack;
 
+    private WakeLock mHdmiWakeLock;
+    private Context mContext;
+
     public WiredAccessoryManager(Context context, InputManagerService inputManager) {
         PowerManager pm = (PowerManager)context.getSystemService(Context.POWER_SERVICE);
         mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WiredAccessoryManager");
         mWakeLock.setReferenceCounted(false);
+        mContext= context;
+        mHdmiWakeLock=pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK|PowerManager.ON_AFTER_RELEASE, "HdmiWakeLock");
+        mHdmiWakeLock.setReferenceCounted(false); 
         mAudioManager = (AudioManager)context.getSystemService(Context.AUDIO_SERVICE);
         mInputManager = inputManager;
 
@@ -275,12 +286,16 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
                 outDevice = AudioManager.DEVICE_OUT_WIRED_HEADPHONE;
             } else if (headset == BIT_LINEOUT){
                 outDevice = AudioManager.DEVICE_OUT_LINE;
-            } else if (headset == BIT_USB_HEADSET_ANLG) {
-                outDevice = AudioManager.DEVICE_OUT_ANLG_DOCK_HEADSET;
-            } else if (headset == BIT_USB_HEADSET_DGTL) {
-                outDevice = AudioManager.DEVICE_OUT_DGTL_DOCK_HEADSET;
+                //} else if (headset == BIT_USB_HEADSET_ANLG) {
+                //    outDevice = AudioManager.DEVICE_OUT_ANLG_DOCK_HEADSET;
+                //} else if (headset == BIT_USB_HEADSET_DGTL) {
+                //   outDevice = AudioManager.DEVICE_OUT_DGTL_DOCK_HEADSET;
             } else if (headset == BIT_HDMI_AUDIO) {
                 outDevice = AudioManager.DEVICE_OUT_HDMI;
+            } else if (headset == BIT_USB_DEVICE_AUDIO_PLAYBACK) {
+                outDevice = AudioManager.DEVICE_OUT_USB_DEVICE;
+            } else if (headset == BIT_USB_DEVICE_AUDIO_CAPTURE) {
+                inDevice = AudioManager.DEVICE_IN_USB_DEVICE;
             } else {
                 Slog.e(TAG, "setDeviceState() invalid headset type: "+headset);
                 return;
@@ -288,12 +303,26 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
 
             if (LOG)
                 Slog.v(TAG, "device "+headsetName+((state == 1) ? " connected" : " disconnected"));
-
             if (outDevice != 0) {
-              mAudioManager.setWiredDeviceConnectionState(outDevice, state, headsetName);
+                mAudioManager.setWiredDeviceConnectionState(outDevice, state, headsetName);
             }
             if (inDevice != 0) {
-              mAudioManager.setWiredDeviceConnectionState(inDevice, state, headsetName);
+                mAudioManager.setWiredDeviceConnectionState(inDevice, state, headsetName);
+            }
+            if (headsetName.equals("hdmi")&&state==1) {
+                Intent intent=new Intent("android.intent.action.HDMI_PLUG");
+                intent.putExtra("state", 1);
+                intent.putExtra("name", "hdmi");
+                mContext.sendBroadcast(intent);
+                mHdmiWakeLock.acquire();
+                Log.d(TAG,"--- hdmi connect ");
+            } else if(headsetName.equals("hdmi")&&state==0) {
+                Log.d(TAG,"--- hdmi disconnect ");
+                Intent intent=new Intent("android.intent.action.HDMI_PLUG");
+                intent.putExtra("state", 0);
+                intent.putExtra("name", "hdmi");
+                mContext.sendBroadcast(intent);
+                mHdmiWakeLock.release();
             }
         }
     }
@@ -331,8 +360,21 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
                         int len = file.read(buffer, 0, 1024);
                         file.close();
                         curState = Integer.valueOf((new String(buffer, 0, len)).trim());
-
-                        if (curState > 0) {
+                        //usb audio state: card*10+device from kernel usb audio switch
+                        if (curState >= 30) {
+                            String cardDeviceName = "card="+(curState/10)+";device="+(curState%10);
+                            Slog.v(TAG, "cardDeviceName: "+cardDeviceName);
+                            int card = curState/10;
+                            curState = 1;// usb audio connected
+                            int device = 0;
+                            if(NAME_USB_AUDIO_PLAYBACK.equals(uei.getDevName()))
+                                device = AudioManager.DEVICE_OUT_USB_DEVICE;
+                            else if(NAME_USB_AUDIO_CAPTURE.equals(uei.getDevName()))
+                                device = AudioManager.DEVICE_IN_USB_DEVICE;
+                            else
+                                Slog.v(TAG, "unknown err, need to be fixed!!!");
+                            mAudioManager.setWiredDeviceConnectionState(device, curState, cardDeviceName);
+                        } else if (curState > 0) {
                             updateStateLocked(uei.getDevPath(), uei.getDevName(), curState);
                         }
                     } catch (FileNotFoundException e) {
@@ -374,7 +416,20 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
             } else {
                 Slog.w(TAG, "This kernel does not have usb audio support");
             }
-
+            // Monitor USB device audio playback
+            uei = new UEventInfo(NAME_USB_AUDIO_PLAYBACK, BIT_USB_DEVICE_AUDIO_PLAYBACK, 0, 0);
+            if (uei.checkSwitchExists()) {
+                retVal.add(uei);
+            } else {
+                Slog.w(TAG, "This kernel does not have usb audio playback support");
+            }
+            // Monitor USB device audio capture
+            uei = new UEventInfo(NAME_USB_AUDIO_CAPTURE, BIT_USB_DEVICE_AUDIO_CAPTURE, 0, 0);
+            if (uei.checkSwitchExists()) {
+                retVal.add(uei);
+            } else {
+                Slog.w(TAG, "This kernel does not have usb audio capture support");
+            }
             // Monitor HDMI
             //
             // If the kernel has support for the "hdmi_audio" switch, use that.  It will be
@@ -383,15 +438,18 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
             //
             // If the kernel does not have an "hdmi_audio" switch, just fall back on the older
             // "hdmi" switch instead.
-            uei = new UEventInfo(NAME_HDMI_AUDIO, BIT_HDMI_AUDIO, 0, 0);
-            if (uei.checkSwitchExists()) {
-                retVal.add(uei);
-            } else {
-                uei = new UEventInfo(NAME_HDMI, BIT_HDMI_AUDIO, 0, 0);
+            boolean isBOX = "box".equals(SystemProperties.get("ro.target.product", "box"));
+            if (!isBOX) {
+                uei = new UEventInfo(NAME_HDMI_AUDIO, BIT_HDMI_AUDIO, 0, 0);
                 if (uei.checkSwitchExists()) {
                     retVal.add(uei);
                 } else {
-                    Slog.w(TAG, "This kernel does not have HDMI audio support");
+                    uei = new UEventInfo(NAME_HDMI, BIT_HDMI_AUDIO, 0, 0);
+                    if (uei.checkSwitchExists()) {
+                        retVal.add(uei);
+                    } else {
+                        Slog.w(TAG, "This kernel does not have HDMI audio support");
+                    }
                 }
             }
 
@@ -407,10 +465,45 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
                 String name = event.get("SWITCH_NAME");
                 int state = Integer.parseInt(event.get("SWITCH_STATE"));
                 synchronized (mLock) {
-                    updateStateLocked(devPath, name, state);
+                    if (state>=30 || state<0) {
+                        String cardDeviceName = "";
+                        int device = 0;
+                        int card = state/10;
+                        //usb audio state: card*10+device from kernel usb audio switch
+                        if (state >= 30) {
+                            cardDeviceName = "card="+(state/10)+";device="+(state%10);
+                            Slog.v(TAG, "cardDeviceName: "+cardDeviceName);
+                            state = 1;// usb audio connected
+                        }
+                        else if (state < 0) {
+                            //no usb audio exist.
+                            state = 0;
+                            Slog.v(TAG, "cardDeviceName: "+cardDeviceName);
+                        }
+                        if(name.equals(NAME_USB_AUDIO_PLAYBACK))
+                            device = AudioManager.DEVICE_OUT_USB_DEVICE;
+                        else if(name.equals(NAME_USB_AUDIO_CAPTURE))
+                            device = AudioManager.DEVICE_IN_USB_DEVICE;
+                        else
+                            Slog.v(TAG, "unknown err, need to be fixed!!!");
+                        mAudioManager.setWiredDeviceConnectionState(device, state, cardDeviceName);
+                    } else{
+                        updateStateLocked(devPath, name, state);
+                    }
                 }
             } catch (NumberFormatException e) {
                 Slog.e(TAG, "Could not parse switch state from event " + event);
+            }
+
+            try {
+                String devPath = event.get("DEVPATH");
+                String name = event.get("NAME");
+                int state = Integer.parseInt(event.get("STATE"));
+                synchronized (mLock) {
+                    updateStateLocked(devPath, name, state);
+                }
+            } catch (NumberFormatException e) {
+                Slog.e(TAG, "Could not parse extcon state from event " + event);
             }
         }
 
@@ -426,12 +519,22 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
 
         private final class UEventInfo {
             private final String mDevName;
+            private final String mClassName;
             private final int mState1Bits;
             private final int mState2Bits;
             private final int mStateNbits;
 
             public UEventInfo(String devName, int state1Bits, int state2Bits, int stateNbits) {
                 mDevName = devName;
+
+                /* Check if the kernel is using EXTCON class */
+                File f_extcon = new File(String.format(Locale.US, "/sys/class/extcon/%s/state", mDevName));
+                if (f_extcon.exists()) {
+                    mClassName = "extcon";
+                } else {
+                    mClassName = "switch";
+                }
+
                 mState1Bits = state1Bits;
                 mState2Bits = state2Bits;
                 mStateNbits = stateNbits;
@@ -440,11 +543,11 @@ final class WiredAccessoryManager implements WiredAccessoryCallbacks {
             public String getDevName() { return mDevName; }
 
             public String getDevPath() {
-                return String.format(Locale.US, "/devices/virtual/switch/%s", mDevName);
+                return String.format(Locale.US, "/devices/virtual/%s/%s", mClassName, mDevName);
             }
 
             public String getSwitchStatePath() {
-                return String.format(Locale.US, "/sys/class/switch/%s/state", mDevName);
+                return String.format(Locale.US, "/sys/class/%s/%s/state", mClassName, mDevName);
             }
 
             public boolean checkSwitchExists() {

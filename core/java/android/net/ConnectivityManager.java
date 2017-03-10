@@ -45,6 +45,7 @@ import android.util.Log;
 import com.android.internal.telephony.ITelephony;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.util.Protocol;
+import android.os.SystemProperties;
 
 import java.net.InetAddress;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -407,12 +408,14 @@ public class ConnectivityManager {
      * It may or may not be providing security services.
      */
     public static final int TYPE_VPN = 17;
+   /** {@hide} */
+    public static final int TYPE_PPPOE=18;
 
     /** {@hide} */
-    public static final int MAX_RADIO_TYPE   = TYPE_VPN;
+    public static final int MAX_RADIO_TYPE   = TYPE_PPPOE;
 
     /** {@hide} */
-    public static final int MAX_NETWORK_TYPE = TYPE_VPN;
+    public static final int MAX_NETWORK_TYPE = TYPE_PPPOE;
 
     /**
      * If you want to set the default network preference,you can directly
@@ -457,7 +460,16 @@ public class ConnectivityManager {
      * @return a boolean.  {@code true} if the type is valid, else {@code false}
      */
     public static boolean isNetworkTypeValid(int networkType) {
-        return networkType >= 0 && networkType <= MAX_NETWORK_TYPE;
+     /**
+      *  #$_rbox_$_modify_$_blb_20150514_for_pppoe_pass_cts
+      */
+ 
+        String isCts = SystemProperties.get("net.pppoe.cts");
+        if("true".equals(isCts)) {
+            return networkType >= 0 && networkType <= TYPE_VPN;
+        } else {
+            return networkType >= 0 && networkType <= MAX_NETWORK_TYPE;
+        }
     }
 
     /**
@@ -504,6 +516,8 @@ public class ConnectivityManager {
                 return "MOBILE_EMERGENCY";
             case TYPE_PROXY:
                 return "PROXY";
+            case TYPE_PPPOE:
+                return "PPPOE";
             default:
                 return Integer.toString(type);
         }
@@ -939,41 +953,6 @@ public class ConnectivityManager {
         return 1;
     }
 
-    /**
-     * Removes the NET_CAPABILITY_NOT_RESTRICTED capability from the given
-     * NetworkCapabilities object if all the capabilities it provides are
-     * typically provided by restricted networks.
-     *
-     * TODO: consider:
-     * - Moving to NetworkCapabilities
-     * - Renaming it to guessRestrictedCapability and make it set the
-     *   restricted capability bit in addition to clearing it.
-     * @hide
-     */
-    public static void maybeMarkCapabilitiesRestricted(NetworkCapabilities nc) {
-        for (int capability : nc.getCapabilities()) {
-            switch (capability) {
-                case NetworkCapabilities.NET_CAPABILITY_CBS:
-                case NetworkCapabilities.NET_CAPABILITY_DUN:
-                case NetworkCapabilities.NET_CAPABILITY_EIMS:
-                case NetworkCapabilities.NET_CAPABILITY_FOTA:
-                case NetworkCapabilities.NET_CAPABILITY_IA:
-                case NetworkCapabilities.NET_CAPABILITY_IMS:
-                case NetworkCapabilities.NET_CAPABILITY_RCS:
-                case NetworkCapabilities.NET_CAPABILITY_XCAP:
-                case NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED: //there by default
-                    continue;
-                default:
-                    // At least one capability usually provided by unrestricted
-                    // networks. Conclude that this network is unrestricted.
-                    return;
-            }
-        }
-        // All the capabilities are typically provided by restricted networks.
-        // Conclude that this network is restricted.
-        nc.removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED);
-    }
-
     private NetworkCapabilities networkCapabilitiesForFeature(int networkType, String feature) {
         if (networkType == TYPE_MOBILE) {
             int cap = -1;
@@ -996,14 +975,14 @@ public class ConnectivityManager {
             }
             NetworkCapabilities netCap = new NetworkCapabilities();
             netCap.addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR).addCapability(cap);
-            maybeMarkCapabilitiesRestricted(netCap);
+            netCap.maybeMarkCapabilitiesRestricted();
             return netCap;
         } else if (networkType == TYPE_WIFI) {
             if ("p2p".equals(feature)) {
                 NetworkCapabilities netCap = new NetworkCapabilities();
                 netCap.addTransportType(NetworkCapabilities.TRANSPORT_WIFI);
                 netCap.addCapability(NetworkCapabilities.NET_CAPABILITY_WIFI_P2P);
-                maybeMarkCapabilitiesRestricted(netCap);
+                netCap.maybeMarkCapabilitiesRestricted();
                 return netCap;
             }
         }

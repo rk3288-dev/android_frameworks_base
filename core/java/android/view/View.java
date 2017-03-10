@@ -112,6 +112,8 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.android.multiwindow.core.MultiWindowView;
+
 /**
  * <p>
  * This class represents the basic building block for user interface components. A View
@@ -692,6 +694,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class View implements Drawable.Callback, KeyEvent.Callback,
         AccessibilityEventSource {
     private static final boolean DBG = false;
+	private static final boolean DEBUG_ZJY = true;
+	private void LOGD(String msg){
+		if(DEBUG_ZJY){
+			Log.d(VIEW_LOG_TAG,msg);
+		}
+	}
 
     /**
      * The logging tag used by this class with android.util.Log.
@@ -862,7 +870,7 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
      * that they are optional and should be skipped if the window has
      * requested system UI flags that ignore those insets for layout.
      */
-    static final int OPTIONAL_FITS_SYSTEM_WINDOWS = 0x00000800;
+    public static final int OPTIONAL_FITS_SYSTEM_WINDOWS = 0x00000800;
 
     /**
      * <p>This view doesn't show fading edges.</p>
@@ -2474,6 +2482,11 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
     public static final int SYSTEM_UI_FLAG_HIDE_NAVIGATION = 0x00000002;
 
     /**
+     * @hide
+     */
+    public static final int SYSTEM_UI_FLAG_SHOW_FULLSCREEN = 0x00000008;
+
+    /**
      * Flag for {@link #setSystemUiVisibility(int)}: View has requested to go
      * into the normal fullscreen mode so that its content can take over the screen
      * while still allowing the user to interact with the application.
@@ -2594,6 +2607,11 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
      * with one or both of those flags.</p>
      */
     public static final int SYSTEM_UI_FLAG_IMMERSIVE_STICKY = 0x00001000;
+	
+	/**
+	*@hide
+	*/
+	public static final int SYSTEM_UI_FLAG_MULTI_HALF_WINDOW = 0x00002000;
 
     /**
      * @deprecated Use {@link #SYSTEM_UI_FLAG_LOW_PROFILE} instead.
@@ -2901,6 +2919,17 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
      * {@hide}
      */
     AttachInfo mAttachInfo;
+	public boolean isDecorView = false;
+	private int mTopPadding = 0;
+
+	public void setIsDecorView(boolean flag){
+		isDecorView = flag;
+	}
+
+	public void setTopPadding(int topPadding){
+		mBackgroundSizeChanged = true;
+		mTopPadding = topPadding;
+	}
 
     /**
      * {@hide}
@@ -4837,6 +4866,12 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
      */
     protected boolean performButtonActionOnTouchDown(MotionEvent event) {
         if ((event.getButtonState() & MotionEvent.BUTTON_SECONDARY) != 0) {
+          //$_rockchip_$_modify_by_huangjc: right mouse click default show ContextMenu for mutilwindow
+            if(mContext.getResources().getConfiguration().enableMultiWindow()&&event.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE){ 
+              performLongClick();
+               return true;
+            }
+          //$_rockchip_$_end
             if (showContextMenu(event.getX(), event.getY(), event.getMetaState())) {
                 return true;
             }
@@ -6415,6 +6450,13 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
      * to implement handling their own insets.
      */
     protected boolean fitSystemWindows(Rect insets) {
+        // MultiWindow Process First
+        if(mContext.getResources().getConfiguration().multiwindowflag
+                == Configuration.ENABLE_MULTI_WINDOW) {
+            if(MultiWindowView.processFitsSystemWindow(mContext, this, insets)) {
+                return true;
+            }
+        }
         if ((mPrivateFlags3 & PFLAG3_APPLYING_INSETS) == 0) {
             if (insets == null) {
                 // Null insets by definition have already been consumed.
@@ -6553,10 +6595,12 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
      * that should propagate to those under it.
      */
     protected boolean computeFitSystemWindows(Rect inoutInsets, Rect outLocalInsets) {
-        if ((mViewFlags & OPTIONAL_FITS_SYSTEM_WINDOWS) == 0
+         if ((mAttachInfo != null && MultiWindowView.computeFitSystemWindows(mContext,mViewFlags ,mAttachInfo.mSystemUiVisibility, mAttachInfo.mOverscanRequested,mAttachInfo.mViewRootImpl.mWindowAttributes.type
+                ))
+                || ((mViewFlags & OPTIONAL_FITS_SYSTEM_WINDOWS) == 0
                 || mAttachInfo == null
                 || ((mAttachInfo.mSystemUiVisibility & SYSTEM_UI_LAYOUT_FLAGS) == 0
-                        && !mAttachInfo.mOverscanRequested)) {
+                        && !mAttachInfo.mOverscanRequested))) {
             outLocalInsets.set(inoutInsets);
             inoutInsets.set(0, 0, 0, 0);
             return true;
@@ -8661,7 +8705,7 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
      * @return True if the event was handled by the view, false otherwise.
      * @hide
      */
-    public final boolean dispatchPointerEvent(MotionEvent event) {
+    public  boolean dispatchPointerEvent(MotionEvent event, boolean block) {
         if (event.isTouchEvent()) {
             return dispatchTouchEvent(event);
         } else {
@@ -8850,7 +8894,20 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
         Display d = DisplayManagerGlobal.getInstance().getRealDisplay(Display.DEFAULT_DISPLAY);
         d.getRectSize(outRect);
     }
-
+	/**
+	*@hide
+	*/
+	public void getWindowVisibleSurfaceFrame(Rect outRect){
+		if(mAttachInfo != null){
+			try{
+				mAttachInfo.mSession.getSurfaceFrame(mAttachInfo.mWindow, outRect);
+			}catch(RemoteException e){
+				return ;
+			}
+		}
+		//Display d = WindowManagerImpl.getDefault().getDefaultDisplay();
+        //d.getRectSize(outRect);
+	}
     /**
      * Dispatch a notification about a resource configuration change down
      * the view hierarchy.
@@ -13501,6 +13558,79 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
     }
 
     /**
+     * Add this for MediaFloat
+     *@hide
+     */
+    public IWindowSession getRootWindowSession(){
+	return mAttachInfo != null ? mAttachInfo.mSession : null;
+    }
+
+    /**
+     * Add this for MediaFloat
+     * @hide
+     */
+    public IWindow getWindow(){
+	return mAttachInfo != null ? mAttachInfo.mWindow : null;
+    }
+	/**
+	*add by fjz
+	*@hide
+	*/
+	public Rect getContentInsetsRect(){
+		return mAttachInfo != null ? mAttachInfo.mContentInsets : null;
+	}
+	/**
+	* add by fjz
+	* @hide
+	* need override by PhoneWindow.DecorView 
+	*/
+	void dispatchAppAlignChanged(int align,boolean rotate){
+		onAppAlignChanged(align,rotate);
+	}
+
+	/**
+	* add by fjz
+	* @hide
+	*/
+	protected void onAppAlignChanged(int align,boolean rotate){}
+
+	/**
+	* add by zjy
+	* @hide
+	* need override by PhoneWindow.DecorView 
+	*/
+	void dispatchHalfScreenWindowPositionChanged(int posX,int posY){
+		onHalfScreenWindowPositionChanged(posX,posY);
+	}
+	
+	/**
+	* add by zjy
+	* @hide
+	*/
+	protected void onHalfScreenWindowPositionChanged(int posX,int posY){}
+
+		/**
+	* add by lly
+	* @hide
+	* need override by PhoneWindow.DecorView 
+	*/
+	void dispatchTopAllWindow(int taskid){
+		onTopAllWindowChanged(taskid);
+	}
+	
+	/**
+	* add by lly
+	* @hide
+	*/
+	protected void onTopAllWindowChanged(int taskid){}
+
+	void dispatchApplyXTrac(int x) {
+		applyXTrac(x);
+	}
+
+	protected void applyXTrac(int x) {}
+	
+    /**
      * @param info the {@link android.view.View.AttachInfo} to associated with
      *        this view
      */
@@ -15401,7 +15531,12 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
         }
 
         if (mBackgroundSizeChanged) {
-            background.setBounds(0, 0,  mRight - mLeft, mBottom - mTop);
+           // background.setBounds(0, 0,  mRight - mLeft, mBottom - mTop);
+		   if(isDecorView){
+						background.setBounds(0, mTopPadding,mRight - mLeft, mBottom - mTop);
+					}else{
+                    	background.setBounds(0, 0,  mRight - mLeft, mBottom - mTop);
+					}
             mBackgroundSizeChanged = false;
             rebuildOutline();
         }
@@ -18081,12 +18216,17 @@ public class View implements Drawable.Callback, KeyEvent.Callback,
      * and {@link #SYSTEM_UI_FLAG_IMMERSIVE_STICKY}.
      */
     public void setSystemUiVisibility(int visibility) {
+         if(this.getContext().getResources().getConfiguration().multiwindowflag
+                == Configuration.ENABLE_MULTI_WINDOW) {
+            visibility = MultiWindowView.filterSystemUiVisibility(mContext, visibility);
+        }
         if (visibility != mSystemUiVisibility) {
             mSystemUiVisibility = visibility;
             if (mParent != null && mAttachInfo != null && !mAttachInfo.mRecomputeGlobalAttributes) {
                 mParent.recomputeViewAttributes(this);
             }
         }
+		
     }
 
     /**

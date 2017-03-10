@@ -102,6 +102,10 @@ public class TvStatusBar extends BaseStatusBar {
     @Override // CommandQueue
     public void notificationLightPulse(int argb, int onMillis, int offMillis) {
     }
+    
+    @Override // CommandQueue
+    public void addBar() {
+    }
 
     @Override
     protected WindowManager.LayoutParams getSearchLayoutParams(
@@ -182,4 +186,11 @@ public class TvStatusBar extends BaseStatusBar {
     @Override
     public void showScreenPinningRequest() {
     }
+
+    // add Dual SIM support
+    @Override
+    public void showSimSwitchUi(int type) {}
+
+    @Override
+    public void hideSimSwitchUi() {}
 }

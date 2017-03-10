@@ -919,6 +919,15 @@ public class TelephonyManager {
         return TelephonyManager.PHONE_TYPE_NONE;
     }
 
+    /** {@hide} */
+    public static int getDefaultPreferredNetworkType(int phoneId, int defaultValue) {
+        String mode = getTelephonyProperty(phoneId, "ro.telephony.default_network", null);
+        if (mode != null) {
+            return Integer.parseInt(mode);
+        }
+        return defaultValue;
+    }
+
     /**
      * This function returns the type of the phone, depending
      * on the network mode.
@@ -3218,7 +3227,8 @@ public class TelephonyManager {
      */
     public int getTetherApnRequired() {
         try {
-            return getITelephony().getTetherApnRequired();
+            if (getITelephony() != null)
+                return getITelephony().getTetherApnRequired();
         } catch (RemoteException ex) {
             Rlog.e(TAG, "hasMatchedTetherApnSetting RemoteException", ex);
         } catch (NullPointerException ex) {

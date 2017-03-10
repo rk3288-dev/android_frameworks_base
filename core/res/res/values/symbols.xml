@@ -350,6 +350,7 @@
   <java-symbol type="integer" name="config_extraFreeKbytesAbsolute" />
   <java-symbol type="integer" name="config_immersive_mode_confirmation_panic" />
   <java-symbol type="integer" name="config_longPressOnPowerBehavior" />
+  <java-symbol type="integer" name="config_maxCachedApps" />
   <java-symbol type="integer" name="config_lowMemoryKillerMinFreeKbytesAdjust" />
   <java-symbol type="integer" name="config_lowMemoryKillerMinFreeKbytesAbsolute" />
   <java-symbol type="integer" name="config_max_pan_devices" />
@@ -1102,6 +1103,7 @@
   <java-symbol type="array" name="config_gpsParameters" />
 
   <java-symbol type="drawable" name="default_wallpaper" />
+  <java-symbol type="drawable" name="default_wallpaper_small" />
   <java-symbol type="drawable" name="indicator_input_error" />
   <java-symbol type="drawable" name="popup_bottom_dark" />
   <java-symbol type="drawable" name="popup_bottom_bright" />
@@ -1399,7 +1401,9 @@
   <java-symbol type="string" name="media_route_chooser_title" />
   <java-symbol type="string" name="media_route_chooser_title_for_remote_display" />
   <java-symbol type="string" name="bluetooth_a2dp_audio_route_name" />
-
+  <java-symbol type="string" name="global_action_firefly_sleep" />
+  <java-symbol type="string" name="global_action_firefly_switch_system" />
+  <java-symbol type="string" name="global_action_firefly_switch_system_progress" />
   <java-symbol type="dimen" name="config_minScalingSpan" />
   <java-symbol type="dimen" name="config_minScalingTouchMajor" />
 
@@ -1445,12 +1449,18 @@
   <java-symbol type="dimen" name="navigation_bar_height_landscape" />
   <java-symbol type="dimen" name="navigation_bar_width" />
   <java-symbol type="dimen" name="status_bar_height" />
+  <java-symbol type="dimen" name="status_bar_height_mul" />
+  <java-symbol type="dimen" name="app_window_bounds_width"/>
   <java-symbol type="drawable" name="ic_jog_dial_sound_off" />
   <java-symbol type="drawable" name="ic_jog_dial_sound_on" />
   <java-symbol type="drawable" name="ic_jog_dial_unlock" />
   <java-symbol type="drawable" name="ic_jog_dial_vibrate_on" />
   <java-symbol type="drawable" name="ic_lock_airplane_mode" />
   <java-symbol type="drawable" name="ic_lock_airplane_mode_off" />
+  <java-symbol type="drawable" name="ic_lock_firefly_power_off" />
+  <java-symbol type="drawable" name="ic_lock_firefly_reboot" />
+  <java-symbol type="drawable" name="ic_lock_firefly_sleep" />
+  <java-symbol type="drawable" name="ic_lock_firefly_ubuntu" />
   <java-symbol type="drawable" name="ic_menu_cc" />
   <java-symbol type="drawable" name="jog_tab_bar_left_unlock" />
   <java-symbol type="drawable" name="jog_tab_bar_right_sound_off" />
@@ -1509,6 +1519,8 @@
   <java-symbol type="layout" name="screen_simple_overlay_action_mode" />
   <java-symbol type="layout" name="screen_swipe_dismiss" />
   <java-symbol type="layout" name="screen_title" />
+  <java-symbol type="layout" name="screen_title_win8" />
+  <java-symbol type="layout" name="screen_title_phone" />
   <java-symbol type="layout" name="screen_title_icons" />
   <java-symbol type="string" name="system_ui_date_pattern" />
   <java-symbol type="string" name="android_start_title" />
@@ -1628,6 +1640,24 @@
   <java-symbol type="drawable" name="stat_sys_throttled" />
   <java-symbol type="drawable" name="vpn_connected" />
   <java-symbol type="drawable" name="vpn_disconnected" />
+  <java-symbol type="drawable" name="circlemenu_narrow" />
+  <java-symbol type="drawable" name="circlemenu_larger" />
+  <java-symbol type="drawable" name="circlemenu_larger_phone" />
+  <java-symbol type="drawable" name="circlemenu_close" />
+  <java-symbol type="drawable" name="circlemenu_settop" />
+  <java-symbol type="drawable" name="circlemenu_settoped" />
+  <java-symbol type="drawable" name="win_title_bg" />
+  <java-symbol type="drawable" name="win_background_transparent" />
+  <java-symbol type="drawable" name="btn_default_transparent_normal" />
+  <java-symbol type="drawable" name="dualscreen" />
+  
+  <java-symbol type="id" name="dualscreen_icon" />
+  <java-symbol type="id" name="min_icon" />
+  <java-symbol type="id" name="attach_icon" />
+  <java-symbol type="id" name="max_icon" />
+  <java-symbol type="id" name="close_icon" />
+ 
+
   <java-symbol type="id" name="ask_checkbox" />
   <java-symbol type="id" name="compat_checkbox" />
   <java-symbol type="id" name="original_app_icon" />
@@ -1770,6 +1800,7 @@
   <java-symbol type="style" name="Theme.Leanback.Dialog.Alert" />
   <java-symbol type="style" name="Theme.Toast" />
   <java-symbol type="xml" name="storage_list" />
+  <java-symbol type="xml" name="storage_list_box" />
   <java-symbol type="bool" name="config_dreamsSupported" />
   <java-symbol type="bool" name="config_dreamsEnabledByDefault" />
   <java-symbol type="bool" name="config_dreamsEnabledOnBattery" />
@@ -1791,6 +1822,10 @@
   <java-symbol type="string" name="config_customVpnConfirmDialogComponent" />
   <java-symbol type="string" name="config_defaultNetworkScorerPackageName" />
   <java-symbol type="string" name="config_persistentDataPackageName" />
+
+  <!--Make system animation scale configurable -->
+  <java-symbol type="string" name="config_window_animation_scale" />
+  <java-symbol type="string" name="config_transition_animation_scale" />
 
   <java-symbol type="layout" name="resolver_list" />
   <java-symbol type="id" name="resolver_list" />
@@ -1968,6 +2003,132 @@
   <java-symbol type="dimen" name="subtitle_shadow_offset" />
   <java-symbol type="dimen" name="subtitle_outline_width" />
 
+  <java-symbol type="anim" name="translucent_exitleft" />
+  <java-symbol type="anim" name="translucent_exitright" />
+  <java-symbol type="anim" name="translucent_enterleft" />
+  <java-symbol type="anim" name="translucent_enterright" />
+
+<!--$_rbox_$_modify_$_lijiehong_$_20120319_$-->
+<!--$_rbox_$_modify_$_begin-->
+    <!-- unmount USBMassStorage -->
+    <java-symbol type="string" name="usb_media_stop_title"/>
+    <java-symbol type="string" name="usb_media_stop_title_1"/>
+    <java-symbol type="string" name="usb_media_stop_title_2"/>
+    <java-symbol type="string" name="usb_media_stop_title_otg"/>
+    
+    <java-symbol type="string" name="usb_media_stop_message"/>
+    <java-symbol type="string" name="usb_media_stop_message_1"/>
+    <java-symbol type="string" name="usb_media_stop_message_2"/>
+    <java-symbol type="string" name="usb_media_stop_message_otg"/>
+
+    <java-symbol type="string" name="usb_storage_stop_button_unmount"/>
+    <java-symbol type="string" name="usb_mass_storage_stop_button"/>
+    <java-symbol type="string" name="usb_mass_storage_mount_button"/>
+    <java-symbol type="string" name="usb_mass_storage_activity_title"/>
+    <java-symbol type="string" name="usb_mass_storage_activity_title_1"/>
+    <java-symbol type="string" name="usb_mass_storage_activity_title_2"/>
+    <java-symbol type="string" name="usb_mass_storage_activity_title_otg"/>
+    <java-symbol type="string" name="usb_mass_storage_stop_error_message"/>
+    <java-symbol type="string" name="usb_mass_storage_stop_success_message"/>
+
+    <!-- USB_MASS_STORAGE_KILL_STORAGE_USERS dialog message text -->
+    <java-symbol type="string" name="dlg_confirm_kill_mass_storage_users_title"/>
+    <java-symbol type="string" name="dlg_confirm_kill_mass_storage_users_text"/>
+
+    <java-symbol type="string" name="ext_media_notification_title" product="default"/>
+    <java-symbol type="string" name="ext_media_notification_message"/>
+
+    <!-- usb media notification strings -->
+    <java-symbol type="string" name="usb_media_checking_notification_title"/>
+    <java-symbol type="string" name="usb_media_checking_notification_title_1"/>
+    <java-symbol type="string" name="usb_media_checking_notification_title_2"/>
+    <java-symbol type="string" name="usb_media_checking_notification_title_otg"/>
+    <java-symbol type="string" name="usb_media_checking_notification_message"/>
+
+    <!-- Internal media notification strings -->
+    <!-- Shown when external media is being checked -->
+    <java-symbol type="string" name="flash_media_checking_notification_title"/>
+    <java-symbol type="string" name="flash_media_checking_notification_message"/>
+
+    <!-- Shown when internal flash storage is blank (or unsupported filesystem) -->
+    <java-symbol type="string" name="flash_media_nofs_notification_title"/>
+    <java-symbol type="string" name="flash_media_nofs_notification_message"/>
+
+    <!-- Shown when usb media is blank (or unsupported filesystem) -->
+    <java-symbol type="string" name="usb_media_nofs_notification_title"/>
+    <java-symbol type="string" name="usb_media_nofs_notification_title_1"/>
+    <java-symbol type="string" name="usb_media_nofs_notification_title_2"/>
+    <java-symbol type="string" name="usb_media_nofs_notification_title_otg"/>
+    <java-symbol type="string" name="usb_media_nofs_notification_message"/>
+
+    <!-- Shown when usb media is mountable -->
+    <java-symbol type="string" name="usb_media_notification_title"/>
+    <java-symbol type="string" name="usb_media_notification_title_1"/>
+    <java-symbol type="string" name="usb_media_notification_title_2"/>
+    <java-symbol type="string" name="usb_media_notification_title_otg"/>
+    
+    <java-symbol type="string" name="usb_media_notification_message"/>
+    <java-symbol type="string" name="usb_media_notification_message_1"/>
+    <java-symbol type="string" name="usb_media_notification_message_2"/>
+    <java-symbol type="string" name="usb_media_notification_message_otg"/>
+
+    <!-- Shown when usb media is unmountable (corrupt)) -->
+    <java-symbol type="string" name="usb_media_unmountable_notification_title"/>
+    <java-symbol type="string" name="usb_media_unmountable_notification_title_1"/>
+    <java-symbol type="string" name="usb_media_unmountable_notification_title_2"/>
+    <java-symbol type="string" name="usb_media_unmountable_notification_title_otg"/>
+    <java-symbol type="string" name="usb_media_unmountable_notification_message"/>
+
+    <!-- Shown when usb media is unsafely removed -->
+    <java-symbol type="string" name="usb_media_badremoval_notification_title"/>
+    <java-symbol type="string" name="usb_media_badremoval_notification_title_1"/>
+    <java-symbol type="string" name="usb_media_badremoval_notification_title_2"/>
+    <java-symbol type="string" name="usb_media_badremoval_notification_title_otg"/>
+    <java-symbol type="string" name="usb_media_badremoval_notification_message"/>
+
+    <!-- Shown when usb media has been safely removed -->
+    <java-symbol type="string" name="usb_media_safe_unmount_notification_title"/>
+    <java-symbol type="string" name="usb_media_safe_unmount_notification_title_1"/>
+    <java-symbol type="string" name="usb_media_safe_unmount_notification_title_2"/>
+    <java-symbol type="string" name="usb_media_safe_unmount_notification_title_otg"/>
+    <java-symbol type="string" name="usb_media_safe_unmount_notification_message"/>
+
+    <!-- Shown when external media has been safely removed -->
+    <java-symbol type="string" name="flash_media_safe_unmount_notification_title"/>
+    <java-symbol type="string" name="flash_media_safe_unmount_notification_message"/>
+
+     <!-- Shown when usb media is missing -->
+    <java-symbol type="string" name="usb_media_nomedia_notification_title"/>
+    <java-symbol type="string" name="usb_media_nomedia_notification_title_1"/>
+    <java-symbol type="string" name="usb_media_nomedia_notification_title_2"/>
+    <java-symbol type="string" name="usb_media_nomedia_notification_title_otg"/>
+    <java-symbol type="string" name="usb_media_nomedia_notification_message"/>
+
+  <!-- config for storage removable status -->
+  <java-symbol type="bool" name="config_secondVolumeStorageRemovable" />
+
+  <!-- drawable for storage status -->
+  <java-symbol type="drawable" name="stat_notify_flash" />
+  <java-symbol type="drawable" name="stat_notify_flash_prepare" />
+  <java-symbol type="drawable" name="stat_notify_flash_usb" />
+  <java-symbol type="drawable" name="stat_notify_usb_media_prepared" />
+
+
+
+    <!-- Storage description for USB storage. [CHAR LIMIT=NONE] -->
+   <java-symbol type="string" name="storage_usb0"/>
+   <java-symbol type="string" name="storage_usb1"/>
+   <java-symbol type="string" name="storage_usb2"/>
+   <java-symbol type="string" name="storage_usb3"/>
+   <java-symbol type="string" name="storage_usb4"/>
+   <java-symbol type="string" name="storage_usb5"/>
+<java-symbol type="string" name="storage_usb6"/>
+<java-symbol type="string" name="storage_usb7"/>
+<java-symbol type="string" name="storage_usb8"/>
+<java-symbol type="string" name="storage_usb9"/>
+<java-symbol type="string" name="storage_usb10"/>
+<!--$_rbox_$_modify_$_end-->
+
   <java-symbol type="attr" name="nestedScrollingEnabled" />
 
   <java-symbol type="style" name="TextAppearance.Holo.TimePicker.TimeLabel" />
@@ -2134,6 +2295,8 @@
   <java-symbol type="bool" name="config_switch_phone_on_voice_reg_state_change" />
   <java-symbol type="string" name="whichHomeApplicationNamed" />
   <java-symbol type="bool" name="config_sms_force_7bit_encoding" />
+  <java-symbol type="style" name="Animation.TranslucentLeft" />
+  <java-symbol type="style" name="Animation.TranslucentRight" />
   <java-symbol type="bool" name="config_defaultWindowFeatureOptionsPanel" />
   <java-symbol type="bool" name="config_defaultWindowFeatureContextMenu" />
 
@@ -2153,8 +2316,18 @@
   <java-symbol type="dimen" name="fast_scroller_minimum_touch_target" />
   <java-symbol type="array" name="config_cdma_international_roaming_indicators" />
   <java-symbol type="string" name="kg_text_message_separator" />
+  <java-symbol type="string" name="kg_carrier_names_separator" />
 
   <java-symbol type="bool" name="config_use_sim_language_file" />
   <java-symbol type="bool" name="config_LTE_eri_for_network_name" />
   <java-symbol type="bool" name="config_defaultInTouchMode" />
+  <java-symbol type="bool" name="config_non_data_sim_mms_supported" />
+  <java-symbol type="string" name="application_use_landscape_alert" />
+  <java-symbol type="string" name="application_use_portrait_alert" />
+
+  <java-symbol type="string" name="actionbar_share" />
+  <java-symbol type="string" name="actionbar_web_search" />
+  <java-symbol type="layout" name="webview_popup_window" />
+  <java-symbol type="id" name="webview_popupwindow_select_all" />
+  <java-symbol type="id" name="webview_popupwindow_copy" />
 </resources>

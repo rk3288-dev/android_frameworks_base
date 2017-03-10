@@ -26,6 +26,10 @@ import android.content.pm.PackageManager;
 import android.content.res.CompatibilityInfo;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.content.pm.ApplicationInfo;  
+import android.content.ComponentName;  
+import android.content.DialogInterface;  
+import android.content.pm.PackageManager.NameNotFoundException;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.Paint;
@@ -36,6 +40,7 @@ import android.graphics.PorterDuff;
 import android.graphics.Rect;
 import android.graphics.Region;
 import android.graphics.drawable.Drawable;
+import android.graphics.Color;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.DisplayManager.DisplayListener;
 import android.media.AudioManager;
@@ -79,7 +84,8 @@ import com.android.internal.os.SomeArgs;
 import com.android.internal.policy.PolicyManager;
 import com.android.internal.view.BaseSurfaceHolder;
 import com.android.internal.view.RootViewSurfaceTaker;
-
+import android.content.ContentResolver;
+import android.provider.Settings;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -87,7 +93,17 @@ import java.io.PrintWriter;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashSet;
-
+import android.app.Activity; 
+import android.app.ActivityManager;  
+import java.util.List; 
+import android.content.Context;  
+import java.util.Iterator;
+import android.view.IAppAlignWatcher;
+import android.database.ContentObserver;
+import android.content.ContentResolver;
+import android.provider.Settings;
+import android.net.Uri;
+import android.view.IWindowManager;
 /**
  * The top of a view hierarchy, implementing the needed protocol between View
  * and the WindowManager.  This is for the most part an internal implementation
@@ -99,6 +115,12 @@ import java.util.HashSet;
 public final class ViewRootImpl implements ViewParent,
         View.AttachInfo.Callbacks, HardwareRenderer.HardwareDrawCallbacks {
     private static final String TAG = "ViewRootImpl";
+	private static final boolean DEBUG_ZJY = true;
+	private static void LOGD(String msg){
+		if(DEBUG_ZJY){
+			Log.d(TAG, msg);
+		}
+	}
     private static final boolean DBG = false;
     private static final boolean LOCAL_LOGV = false;
     /** @noinspection PointlessBooleanExpression*/
@@ -157,6 +179,8 @@ public final class ViewRootImpl implements ViewParent,
 
     final int mTargetSdkVersion;
 
+	AppAlignWatcher mAppAlignWatcher = null;
+
     int mSeq;
 
     View mView;
@@ -167,6 +191,13 @@ public final class ViewRootImpl implements ViewParent,
     int mViewVisibility;
     boolean mAppVisible = true;
     int mOrigWindowType = -1;
+
+	boolean mDrawBounds = false;
+	boolean mDrawBlends = false;
+	MultiWindowInfo mWindowInfo = new MultiWindowInfo();
+	SettingsObserver mSettingsObserver = null;
+	boolean mScaleDrageMode = false;
+	static int mWindowBoundsWidth = 0;
 
     // Set to true if the owner of this window is in the stopped state,
     // so the window should no longer be active.
@@ -208,6 +239,7 @@ public final class ViewRootImpl implements ViewParent,
     boolean mApplyInsetsRequested;
     boolean mLayoutRequested;
     boolean mFirst;
+    boolean mEnableHardwareAcceleration;
     boolean mReportNextDraw;
     boolean mFullRedrawNeeded;
     boolean mNewSurfaceNeeded;
@@ -267,6 +299,7 @@ public final class ViewRootImpl implements ViewParent,
 
     final Configuration mLastConfiguration = new Configuration();
     final Configuration mPendingConfiguration = new Configuration();
+    boolean mConfigurationChanged = false;
 
     boolean mScrollMayChange;
     int mSoftInputMode;
@@ -336,6 +369,7 @@ public final class ViewRootImpl implements ViewParent,
     private boolean mIsCircularEmulator;
     private final boolean mWindowIsRound;
 
+    protected IWindowManager mWindowManagerService;
     /**
      * Consistency verifier for debugging purposes.
      */
@@ -353,6 +387,7 @@ public final class ViewRootImpl implements ViewParent,
     public ViewRootImpl(Context context, Display display) {
         mContext = context;
         mWindowSession = WindowManagerGlobal.getWindowSession();
+	mWindowManagerService = WindowManagerGlobal.getWindowManagerService();
         mDisplay = display;
         mBasePackageName = context.getBasePackageName();
 
@@ -368,12 +403,19 @@ public final class ViewRootImpl implements ViewParent,
         mVisRect = new Rect();
         mWinFrame = new Rect();
         mWindow = new W(this);
+		boolean multiwindowConfig = context.getResources().getConfiguration().enableMultiWindow();
+		if(multiwindowConfig){
+			LOGD("create AppAlignWatcher");
+			mAppAlignWatcher = new AppAlignWatcher();
+		}
+		mWindowBoundsWidth = (int)context.getResources().getDimension(com.android.internal.R.dimen.app_window_bounds_width);
         mTargetSdkVersion = context.getApplicationInfo().targetSdkVersion;
         mViewVisibility = View.GONE;
         mTransparentRegion = new Region();
         mPreviousTransparentRegion = new Region();
         mFirst = true; // true for the first time the view is added
         mAdded = false;
+        mEnableHardwareAcceleration  = false;
         mAttachInfo = new View.AttachInfo(mWindowSession, mWindow, display, this, mHandler, this);
         mAccessibilityManager = AccessibilityManager.getInstance(context);
         mAccessibilityInteractionConnectionManager =
@@ -392,6 +434,7 @@ public final class ViewRootImpl implements ViewParent,
         loadSystemProperties();
         mWindowIsRound = context.getResources().getBoolean(
                 com.android.internal.R.bool.config_windowIsRound);
+		//try{throw new RuntimeException();}catch(Exception e){e.printStackTrace();}
     }
 
     public static void addFirstDrawHandler(Runnable callback) {
@@ -481,6 +524,11 @@ public final class ViewRootImpl implements ViewParent,
 
                 // If the application owns the surface, don't enable hardware acceleration
                 if (mSurfaceHolder == null) {
+		    String clickapp = Settings.System.getString(mView.getContext().getContentResolver(), Settings.System.LAUNCHER_CLICK_APP);
+                    if(clickapp!= null &&mView.getContext() != null&& clickapp.equals(mView.getContext().getPackageName())){
+                        mEnableHardwareAcceleration  = (attrs.flags &WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED )!=0;  
+                        attrs.flags &= ~WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED;
+                     }
                     enableHardwareAcceleration(attrs);
                 }
 
@@ -566,7 +614,7 @@ public final class ViewRootImpl implements ViewParent,
                             throw new WindowManager.BadTokenException(
                                     "Unable to add window -- token " + attrs.token
                                     + " is not for an application");
-                        case WindowManagerGlobal.ADD_APP_EXITING:
+			case WindowManagerGlobal.ADD_APP_EXITING:
                             throw new WindowManager.BadTokenException(
                                     "Unable to add window -- app for token " + attrs.token
                                     + " is exiting");
@@ -646,6 +694,12 @@ public final class ViewRootImpl implements ViewParent,
 
     /** Whether the window is in local focus mode or not */
     private boolean isInLocalFocusMode() {
+        //$_rockchip_$_modify_by_huangjc
+        //in multiwindow mode,for IMM,we no need to to judge whether the window is 
+        //in local focus mode.if true,IMM sometimes will be fail for no focus.
+        if(mContext.getResources().getConfiguration().enableMultiWindow())
+            return false;
+        //$_rockchip_$_end
         return (mWindowAttributes.flags & WindowManager.LayoutParams.FLAG_LOCAL_FOCUS_MODE) != 0;
     }
 
@@ -690,10 +744,36 @@ public final class ViewRootImpl implements ViewParent,
         }
     }
 
+    public String getAppNameByPID(int pID)
+    {
+        String processName = "";
+        ActivityManager am = (ActivityManager)mContext.getSystemService(Context.ACTIVITY_SERVICE);
+        List l = am.getRunningAppProcesses();
+        Iterator i = l.iterator();
+        PackageManager pm = mContext.getPackageManager();
+        while(i.hasNext()) 
+        {
+            ActivityManager.RunningAppProcessInfo info = (ActivityManager.RunningAppProcessInfo)(i.next());
+            try {
+                if(info.pid == pID)
+                {
+                    CharSequence c = pm.getApplicationLabel(pm.getApplicationInfo(info.processName, PackageManager.GET_META_DATA));
+                    Log.d("Process", "Id: "+ info.pid +" ProcessName: "+ info.processName +"  Label: "+c.toString());
+                    //processName = c.toString();
+                    processName = info.processName;
+                } 
+            }
+            catch(Exception e) 
+            {
+                //Log.d("Process", "Error>> :"+ e.toString());
+            }
+        }
+        return processName;
+    }
     private void enableHardwareAcceleration(WindowManager.LayoutParams attrs) {
+        String callerPackage = mView.getContext().getPackageName();//getAppNameByPID(Binder.getCallingPid());
         mAttachInfo.mHardwareAccelerated = false;
         mAttachInfo.mHardwareAccelerationRequested = false;
-
         // Don't enable hardware acceleration when the application is in compatibility mode
         if (mTranslator != null) return;
 
@@ -705,7 +785,10 @@ public final class ViewRootImpl implements ViewParent,
             if (!HardwareRenderer.isAvailable()) {
                 return;
             }
-
+            if(callerPackage.equals("com.eebbk.draftpaper")) {
+                Log.d(TAG,"force software draw");
+                return;
+            }
             // Persistent processes (including the system) should not do
             // accelerated rendering on low-end devices.  In that case,
             // sRendererDisabled will be set.  In addition, the system process
@@ -760,7 +843,7 @@ public final class ViewRootImpl implements ViewParent,
             final int oldInsetRight = mWindowAttributes.surfaceInsets.right;
             final int oldInsetBottom = mWindowAttributes.surfaceInsets.bottom;
             final int oldSoftInputMode = mWindowAttributes.softInputMode;
-
+			
             // Keep track of the actual window flags supplied by the client.
             mClientWindowLayoutFlags = attrs.flags;
 
@@ -816,7 +899,24 @@ public final class ViewRootImpl implements ViewParent,
             }
         }
     }
+	void handleDrawBounds(boolean drawBounds){
+		LOGD("handleDrawBounds drawBounds ="+drawBounds);
+		if(!validWindow())return;
+		if(mDrawBounds != drawBounds){
+			mDrawBounds = drawBounds;
+			mView.invalidate();
+		}
+	}
 
+	void handleDrawBlend(boolean drawBlend){
+		LOGD("handleDrawBlend drawBlend="+drawBlend);
+		if(!validWindow())return;
+		
+		if(mDrawBlends != drawBlend){
+			mDrawBlends = drawBlend;
+			mView.invalidate();
+		}
+	}
     void handleGetNewSurface() {
         mNewSurfaceNeeded = true;
         mFullRedrawNeeded = true;
@@ -1297,6 +1397,17 @@ public final class ViewRootImpl implements ViewParent,
                 host.setLayoutDirection(mLastConfiguration.getLayoutDirection());
             }
             host.dispatchAttachedToWindow(mAttachInfo, 0);
+			if(mAppAlignWatcher!=null){
+				try{
+					LOGD("----------registerApplignWatcher-----------mAppliginWatcher="+mAppAlignWatcher);
+					mWindowSession.registerAppAlignWatcher(mWindow,mAppAlignWatcher);
+				}catch(RemoteException ex){}
+			}
+			if(mSettingsObserver == null){
+				LOGD("onAttachToWindow register content observer attrs="+mWindowAttributes);
+				mSettingsObserver = new SettingsObserver(mHandler);
+				mSettingsObserver.observer();
+			}
             mAttachInfo.mTreeObserver.dispatchOnWindowAttachedChange(true);
             dispatchApplyInsets(host);
             //Log.i(TAG, "Screen on initialized: " + attachInfo.mKeepScreenOn);
@@ -1312,6 +1423,7 @@ public final class ViewRootImpl implements ViewParent,
                 windowSizeMayChange = true;
             }
         }
+	//Log.e(TAG, "view " + host + " resized to:" + frame + ", desiredWindowWidth = " + desiredWindowWidth + " , desiredWindowHeight = " + desiredWindowHeight);
 
         if (viewVisibilityChanged) {
             mAttachInfo.mWindowVisibility = viewVisibility;
@@ -1463,7 +1575,11 @@ public final class ViewRootImpl implements ViewParent,
         int relayoutResult = 0;
 
         if (mFirst || windowShouldResize || insetsChanged ||
-                viewVisibilityChanged || params != null) {
+                viewVisibilityChanged || params != null || mConfigurationChanged) {
+
+            if (mConfigurationChanged) {
+                mConfigurationChanged = false;
+            }
 
             if (viewVisibility == View.VISIBLE) {
                 // If this window is giving internal insets to the window
@@ -2666,7 +2782,105 @@ public final class ViewRootImpl implements ViewParent,
         }
         return true;
     }
+	private void drawBoundsAndBlend(Canvas canvas){
+		try{
+			mWindowSession.getTransFormInfo(mWindow,mWindowInfo);
+			
+		}catch(RemoteException e){}
+		mWindowInfo.dumpString();
+		Rect insetRect = mAttachInfo.mContentInsets;
+		int right = canvas.getWidth();
+		int bottom = canvas.getHeight();
+		/*if (mOrientation != -1 && mOrientation % 2 == 1) {
+			right = canvas.getHeight();
+			bottom = canvas.getWidth();
+		}*/
+		Rect rect = new Rect(insetRect.left,insetRect.top,right,bottom);
+		//google maps type=2 and width==-1&height=-1
+		if((mWindowInfo.mActualScale<1.0f && mWindowAttributes.width == -1 && mWindowAttributes.height == -1)
+			|| (mWindowAttributes.flags & WindowManager.LayoutParams.FLAG_HALF_SCREEN_WINDOW) != 0){
+			Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+			paint.setStyle(Paint.Style.STROKE);
+			paint.setAlpha(150);
+			if(mWindowInfo.mFocused == MultiWindowInfo.FLAG_FOCUSED){
+				paint.setColor(0xff33b5e5);
+			}else{
+				paint.setColor(Color.GRAY);
+			}
+			paint.setDither(true);
+			paint.setStrokeCap(Paint.Cap.SQUARE);
+			paint.setStrokeJoin(Paint.Join.BEVEL);
+			paint.setStrokeWidth(mWindowBoundsWidth);			
+			canvas.drawRect(rect, paint);
+		}
+		/*if(mScaleDrageMode){
+			Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+			p.setStyle(Paint.Style.FILL);
+			p.setColor(Color.GRAY);
+			p.setAlpha(150);
+			canvas.drawRect(rect,p);
+		}*/
+	}
 
+	private boolean validWindow(){
+		boolean isValid = false;
+		if((mWindowAttributes.type == WindowManager.LayoutParams.TYPE_BASE_APPLICATION ||
+			mWindowAttributes.type == WindowManager.LayoutParams.TYPE_APPLICATION)&&
+			(mWindowAttributes.width == ViewGroup.LayoutParams.MATCH_PARENT &&
+			mWindowAttributes.height == ViewGroup.LayoutParams.MATCH_PARENT) ||
+			(mWindowAttributes.align == WindowManagerPolicy.WINDOW_ALIGN_RIGHT
+			||mWindowAttributes.align == WindowManagerPolicy.WINDOW_ALIGN_LEFT)){
+			isValid = true;
+		}
+		return isValid;
+	}
+	class SettingsObserver extends ContentObserver{
+			SettingsObserver(Handler handler){
+				super(handler);
+			}		
+			void observer(){
+				ContentResolver resolver = mContext.getContentResolver();
+				/*resolver.registerContentObserver(Settings.System.getUriFor(
+						Settings.System.MULTI_WINDOW_USED), false, this);*/
+				onChange(false,Uri.parse("content://settings/system/multi_window_used"));
+				
+			}
+	
+			@Override public void onChange(boolean selfChange,Uri uri) {
+				WindowManager.LayoutParams wmp = mWindowAttributes;			   	
+				mScaleDrageMode = !ignoreWindow(wmp);	
+			}		
+			
+	}
+	private boolean ignoreWindow(WindowManager.LayoutParams wmparams){
+		boolean ignore = true;
+		boolean sameHomeTask = false;
+		boolean multiWindowUsed = false;//Settings.System.getInt(mContext.getContentResolver(),
+										//Settings.System.MULTI_WINDOW_USED, 0) ==1;
+		if(!multiWindowUsed){
+			return true;
+		}
+		
+		sameHomeTask = isSameTaskWithHome();		
+		if(wmparams != null && "com.android.systemui/com.android.systemui.recent.RecentsActivity".equals(wmparams.getTitle())){
+            ignore = true;
+		}else if(sameHomeTask){
+			ignore = true;
+		}else if(wmparams.type == WindowManager.LayoutParams.TYPE_APPLICATION ||
+			wmparams.type == WindowManager.LayoutParams.TYPE_BASE_APPLICATION){
+			ignore = false;
+		}
+		return ignore;
+
+	}
+	private boolean isSameTaskWithHome(){
+		boolean sameTask = false;
+		try{
+			sameTask = mWindowSession.isSameTaskWithHome(mWindow);
+		}catch(RemoteException e){}
+		
+		return sameTask;
+	}
     /**
      * We want to draw a highlight around the current accessibility focused.
      * Since adding a style for all possible view is not a viable option we
@@ -2976,7 +3190,17 @@ public final class ViewRootImpl implements ViewParent,
         if (mView != null && mView.mAttachInfo != null) {
             mAttachInfo.mTreeObserver.dispatchOnWindowAttachedChange(false);
             mView.dispatchDetachedFromWindow();
+			if(mAppAlignWatcher != null){
+				try{
+					LOGD("--------unregister appAlignWatcher----");
+					mWindowSession.unregisterAppAlignWatcher(mWindow);
+				}catch(RemoteException ex){}
+			}
         }
+		if(mSettingsObserver != null){
+			LOGD("onDetachedFromWindow ungister contentObserver");
+			mContext.getContentResolver().unregisterContentObserver(mSettingsObserver);
+		}
 
         mAccessibilityInteractionConnectionManager.ensureNoConnection();
         mAccessibilityManager.removeAccessibilityStateChangeListener(
@@ -3053,6 +3277,7 @@ public final class ViewRootImpl implements ViewParent,
                     mView.setLayoutDirection(currentLayoutDirection);
                 }
                 mView.dispatchConfigurationChanged(config);
+                mConfigurationChanged = true;
             }
         }
     }
@@ -3104,7 +3329,11 @@ public final class ViewRootImpl implements ViewParent,
     private final static int MSG_WINDOW_MOVED = 24;
     private final static int MSG_SYNTHESIZE_INPUT_EVENT = 25;
     private final static int MSG_DISPATCH_WINDOW_SHOWN = 26;
-
+    private final static int MSG_ENABLED_HARDWARE = 27;
+	private final static int MSG_DISPATCH_DRAW_BOUNDS = 28;
+	private final static int MSG_DISPATCH_DRAW_BLEND = 29;
+	private final static int MSG_DISPATCH_UNHANDLE_KEYEVENT = 30;
+	private final static int MSG_SWITCH_PHONE_MODE = 31;
     final class ViewRootHandler extends Handler {
         @Override
         public String getMessageName(Message message) {
@@ -3155,6 +3384,16 @@ public final class ViewRootImpl implements ViewParent,
                     return "MSG_SYNTHESIZE_INPUT_EVENT";
                 case MSG_DISPATCH_WINDOW_SHOWN:
                     return "MSG_DISPATCH_WINDOW_SHOWN";
+                case MSG_ENABLED_HARDWARE:
+                     return "MSG_ENABLED_HARDWARE";
+	            case MSG_DISPATCH_DRAW_BOUNDS:
+					return "MSG_DISPATCH_DRAW_BOUNDS";
+				case MSG_DISPATCH_DRAW_BLEND:
+					return "MSG_DISPTCH_DRAW_BLEND";
+				case MSG_DISPATCH_UNHANDLE_KEYEVENT:
+					return "MSG_DISPATCH_UNHANDLE_KEYEVENT";
+				case MSG_SWITCH_PHONE_MODE:
+						return "MSG_SWITCH_PHONE_MODE";
             }
             return super.getMessageName(message);
         }
@@ -3177,6 +3416,16 @@ public final class ViewRootImpl implements ViewParent,
             case MSG_DISPATCH_APP_VISIBILITY:
                 handleAppVisibility(msg.arg1 != 0);
                 break;
+			case MSG_DISPATCH_DRAW_BOUNDS:
+				handleDrawBounds(msg.arg1 != 0);
+				break;
+			case MSG_DISPATCH_DRAW_BLEND:
+				handleDrawBlend(msg.arg1 != 0);
+				break;
+			case MSG_DISPATCH_UNHANDLE_KEYEVENT:
+				KeyEvent ke = (KeyEvent)msg.obj;
+				mView.dispatchKeyEvent(ke);
+				break;
             case MSG_DISPATCH_GET_NEW_SURFACE:
                 handleGetNewSurface();
                 break;
@@ -3385,7 +3634,19 @@ public final class ViewRootImpl implements ViewParent,
             } break;
             case MSG_DISPATCH_WINDOW_SHOWN: {
                 handleDispatchWindowShown();
-            }
+            }break;
+            case MSG_ENABLED_HARDWARE:{
+                 Settings.System.putString(mContext.getContentResolver(), Settings.System.LAUNCHER_CLICK_APP, "");
+                    WindowManager.LayoutParams lp = mWindowAttributes;
+                    lp.flags |= WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED;
+                    die();
+                    enableHardwareAcceleration(lp);
+                    setLayoutParams(lp,false);
+            }break;
+			case MSG_SWITCH_PHONE_MODE:{
+				//mWindowAttributes.align = WindowManagerPolicy.WINDOW_ALIGN_RIGHT;
+				Log.v(TAG, "Window dispatchSwitchToPhoneMode " + this + ": mWindowAttributes="+ mWindowAttributes);
+				}break;
             }
         }
     }
@@ -4120,7 +4381,26 @@ public final class ViewRootImpl implements ViewParent,
             final MotionEvent event = (MotionEvent)q.mEvent;
 
             mAttachInfo.mUnbufferedDispatchRequested = false;
-            boolean handled = mView.dispatchPointerEvent(event);
+	    if(mWindowAttributes!= null && mWindowAttributes.type == WindowManager.LayoutParams.FIRST_SUB_WINDOW  &&mWindowAttributes.windowAnimations == 0 
+		&& mView.getResources().getConfiguration().enableMultiWindow() && ("com.android.browser".equals(mView.getContext().getPackageName()) 
+	|| "com.tencent.androidqqmail".equals(mView.getContext().getPackageName()))&& !mView.isDecorView){
+	       MultiWindowInfo info = new MultiWindowInfo();
+	       try{				
+		   mWindowSession.getTransFormInfo(mWindow, info);
+		}catch(RemoteException e){}
+
+                int statusBarHeight = 0;
+               try {
+                       statusBarHeight = (int)mWindowManagerService.getStatusBarHeight();
+               } catch (RemoteException e) {
+                       //Log.w(TAG, "Error :" + e);
+               }
+		if("com.tencent.androidqqmail".equals(mView.getContext().getPackageName())) statusBarHeight = 0;
+		if(info.mHScale != 1.0f && info.mVScale != 1.0f)
+		   event.transformCoordinate(info.mPosX, info.mPosY-statusBarHeight>0?info.mPosY-statusBarHeight:0, info.mHScale, info.mVScale);
+              }
+			
+	    boolean handled = mView.dispatchPointerEvent(event,mScaleDrageMode);
             if (mAttachInfo.mUnbufferedDispatchRequested && !mUnbufferedInputDispatch) {
                 mUnbufferedInputDispatch = true;
                 if (mConsumeBatchedInputScheduled) {
@@ -5305,7 +5585,7 @@ public final class ViewRootImpl implements ViewParent,
                 viewVisibility, insetsPending ? WindowManagerGlobal.RELAYOUT_INSETS_PENDING : 0,
                 mWinFrame, mPendingOverscanInsets, mPendingContentInsets, mPendingVisibleInsets,
                 mPendingStableInsets, mPendingConfiguration, mSurface);
-        //Log.d(TAG, "<<<<<< BACK FROM relayout");
+        Log.d(TAG, mView.getMeasuredWidth() +"<<<<<< BACK FROM relayout"+params);
         if (restore) {
             params.restore();
         }
@@ -5524,6 +5804,30 @@ public final class ViewRootImpl implements ViewParent,
         WindowManagerGlobal.getInstance().doRemoveView(this);
     }
 
+    void die(){
+         if (mAdded && !mFirst) {
+                destroyHardwareRenderer();
+
+                if (mView != null) {
+                    int viewVisibility = mView.getVisibility();
+                    boolean viewVisibilityChanged = mViewVisibility != viewVisibility;
+                    if (mWindowAttributesChanged || viewVisibilityChanged) {
+                        // If layout params have been changed, first give them
+                        // to the window manager to make sure it has the correct
+                        // animation info.
+                        try {
+                            if ((relayoutWindow(mWindowAttributes, viewVisibility, false)
+                                    & WindowManagerGlobal.RELAYOUT_RES_FIRST_TIME) != 0) {
+                                mWindowSession.finishDrawing(mWindow);
+                            }
+                        } catch (RemoteException e) {
+                        }
+                    }
+
+                    mSurface.release();
+                }
+            }
+    }
     public void requestUpdateConfiguration(Configuration config) {
         Message msg = mHandler.obtainMessage(MSG_UPDATE_CONFIGURATION, config);
         mHandler.sendMessage(msg);
@@ -5584,9 +5888,18 @@ public final class ViewRootImpl implements ViewParent,
         mHandler.sendMessage(msg);
     }
 
+	public void dispatchSwitchToPhoneMode(int width,int height){
+		Message msg = mHandler.obtainMessage(MSG_SWITCH_PHONE_MODE);
+		msg.arg1 = width;
+		msg.arg2 = height;
+		mHandler.sendMessage(msg);
+		Log.v(TAG, "Window dispatchSwitchToPhoneMode " + this + ": newX=" + width + " newY=" + height);
+
+	}
+
     public void dispatchResized(Rect frame, Rect overscanInsets, Rect contentInsets,
             Rect visibleInsets, Rect stableInsets, boolean reportDraw, Configuration newConfig) {
-        if (DEBUG_LAYOUT) Log.v(TAG, "Resizing " + this + ": frame=" + frame.toShortString()
+        if (false) Log.v(TAG, mView.getContext().getPackageName()+"Resizing " + this + ": frame=" + frame.toShortString()
                 + " contentInsets=" + contentInsets.toShortString()
                 + " visibleInsets=" + visibleInsets.toShortString()
                 + " reportDraw=" + reportDraw);
@@ -5895,6 +6208,12 @@ public final class ViewRootImpl implements ViewParent,
         @Override
         public void onInputEvent(InputEvent event) {
             enqueueInputEvent(event, this, 0, true);
+            if(mEnableHardwareAcceleration && mContext != null){
+             	String clickapp = Settings.System.getString(mContext.getContentResolver(), Settings.System.LAUNCHER_CLICK_APP);
+				if( mView != null &&clickapp!= null && mView.getContext() != null&& clickapp.equals(mView.getContext().getPackageName())){
+                    mHandler.sendEmptyMessage(MSG_ENABLED_HARDWARE);
+	     	}
+	     }
         }
 
         @Override
@@ -6089,7 +6408,18 @@ public final class ViewRootImpl implements ViewParent,
         msg.arg1 = visible ? 1 : 0;
         mHandler.sendMessage(msg);
     }
+	public void dispatchDrawBounds(boolean drawBounds){
+        Message msg = mHandler.obtainMessage(MSG_DISPATCH_DRAW_BOUNDS);
+        msg.arg1 = drawBounds ? 1 : 0;
+        mHandler.sendMessage(msg);		
+	}
 
+	public void dispatchDrawBlend(boolean drawBlend){
+        Message msg = mHandler.obtainMessage(MSG_DISPATCH_DRAW_BLEND);
+        msg.arg1 = drawBlend ? 1 : 0;
+        mHandler.sendMessage(msg);
+
+	}
     public void dispatchGetNewSurface() {
         Message msg = mHandler.obtainMessage(MSG_DISPATCH_GET_NEW_SURFACE);
         mHandler.sendMessage(msg);
@@ -6472,6 +6802,48 @@ public final class ViewRootImpl implements ViewParent,
             ((RootViewSurfaceTaker)mView).setSurfaceKeepScreenOn(screenOn);
         }
     }
+	class AppAlignWatcher extends IAppAlignWatcher.Stub{
+		   @Override
+		   public void onAppAlignChanged(int align,boolean rotate) throws RemoteException{
+		   		if(mView != null){
+					LOGD("--------onAppAlignChagne align="+align+"-----"+mWindowAttributes.align);
+					mView.dispatchAppAlignChanged(align,rotate);
+				}
+		   }
+
+		    @Override
+		   public void onHalfScreenWindowPositionChanged(int posX,int poxY) throws RemoteException{
+                if(mView != null){
+					LOGD("--------onHalfScreenWindowPositionChanged posX="+posX+"-----poxY:"+poxY);
+					mView.dispatchHalfScreenWindowPositionChanged(posX,poxY);
+				}
+           }
+
+		   @Override
+		   public void dispatchUnhandledKey(KeyEvent event) throws RemoteException{
+                if(mView != null){
+					LOGD("--------dispatchUnhandledKey event="+event);
+					Message msg = mHandler.obtainMessage(MSG_DISPATCH_UNHANDLE_KEYEVENT);
+       				msg.obj = event;
+        			mHandler.sendMessage(msg);
+				}
+           }
+		   @Override
+		   public void onTopAllWindowChanged(int taskid){
+			   if(mView != null){
+					LOGD("--------dispatchTopAllWindow taskid="+taskid);
+					mView.dispatchTopAllWindow(taskid);
+			  }
+
+		   }
+
+		@Override
+		public void applyXTrac(int x) {
+			if(mView != null){
+				mView.dispatchApplyXTrac(x);
+			}
+		}
+    }
 
     static class W extends IWindow.Stub {
         private final WeakReference<ViewRootImpl> mViewAncestor;
@@ -6481,6 +6853,16 @@ public final class ViewRootImpl implements ViewParent,
             mViewAncestor = new WeakReference<ViewRootImpl>(viewAncestor);
             mWindowSession = viewAncestor.mWindowSession;
         }
+		/**
+			* add by lly
+		   */
+		@Override
+        public void switchToPhoneMode(int align,int x,int y,int width,int height){
+         final ViewRootImpl viewAncestor = mViewAncestor.get();
+            if (viewAncestor != null) {
+				viewAncestor.dispatchSwitchToPhoneMode(width,height);
+            	}
+		}
 
         @Override
         public void resized(Rect frame, Rect overscanInsets, Rect contentInsets,
@@ -6508,7 +6890,20 @@ public final class ViewRootImpl implements ViewParent,
                 viewAncestor.dispatchAppVisibility(visible);
             }
         }
+	public void dispatchDrawBounds(boolean drawBounds){
+			final ViewRootImpl viewAncestor = mViewAncestor.get();
+			if(viewAncestor != null){
+				viewAncestor.dispatchDrawBounds(drawBounds);
+			}
+		}
 
+		public void dispatchDrawBlend(boolean drawBlend){
+			final ViewRootImpl viewAncestor = mViewAncestor.get();
+			if(viewAncestor != null){
+				viewAncestor.dispatchDrawBlend(drawBlend);
+			}
+
+		}
         @Override
         public void dispatchGetNewSurface() {
             final ViewRootImpl viewAncestor = mViewAncestor.get();

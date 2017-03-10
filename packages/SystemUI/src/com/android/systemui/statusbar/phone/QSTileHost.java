@@ -16,6 +16,7 @@
 
 package com.android.systemui.statusbar.phone;
 
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Resources;
@@ -26,14 +27,17 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.provider.Settings.Secure;
+import android.telephony.TelephonyManager;
 import android.util.Log;
+
+import com.android.internal.telephony.PhoneConstants;
 
 import com.android.systemui.R;
 import com.android.systemui.qs.QSTile;
 import com.android.systemui.qs.tiles.AirplaneModeTile;
 import com.android.systemui.qs.tiles.BluetoothTile;
 import com.android.systemui.qs.tiles.CastTile;
-import com.android.systemui.qs.tiles.CellularTile;
+import com.android.systemui.qs.tiles.CellularTileForSlot;
 import com.android.systemui.qs.tiles.ColorInversionTile;
 import com.android.systemui.qs.tiles.FlashlightTile;
 import com.android.systemui.qs.tiles.HotspotTile;
@@ -60,6 +64,8 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
+import android.os.SystemProperties;
 
 /** Platform implementation of the quick settings tile host **/
 public class QSTileHost implements QSTile.Host {
@@ -254,7 +260,8 @@ public class QSTileHost implements QSTile.Host {
         if (tileSpec.equals("wifi")) return new WifiTile(this);
         else if (tileSpec.equals("bt")) return new BluetoothTile(this);
         else if (tileSpec.equals("inversion")) return new ColorInversionTile(this);
-        else if (tileSpec.equals("cell")) return new CellularTile(this);
+        else if (tileSpec.equals("cell")) return new CellularTileForSlot(this, PhoneConstants.SIM_ID_1);
+        else if (tileSpec.equals("cell2")) return new CellularTileForSlot(this, PhoneConstants.SIM_ID_2);
         else if (tileSpec.equals("airplane")) return new AirplaneModeTile(this);
         else if (tileSpec.equals("rotation")) return new RotationLockTile(this);
         else if (tileSpec.equals("flashlight")) return new FlashlightTile(this);
@@ -267,7 +274,16 @@ public class QSTileHost implements QSTile.Host {
 
     private List<String> loadTileSpecs() {
         final Resources res = mContext.getResources();
-        final String defaultTileList = res.getString(R.string.quick_settings_tiles_default);
+        final String defaultTileList;
+        final String defaultTileList_bt;
+        if (TelephonyManager.getDefault().getPhoneCount() > 1) {
+            defaultTileList = res.getString(R.string.quick_settings_tiles_default_dualsim);
+            defaultTileList_bt = res.getString(R.string.quick_settings_tiles_default_bt_dualsim);
+        } else {
+            defaultTileList = res.getString(R.string.quick_settings_tiles_default);
+            defaultTileList_bt = res.getString(R.string.quick_settings_tiles_default_bt);
+        }
+
         String tileList = Secure.getStringForUser(mContext.getContentResolver(), TILES_SETTING,
                 mUserTracker.getCurrentUserId());
         if (tileList == null) {
@@ -283,7 +299,10 @@ public class QSTileHost implements QSTile.Host {
             if (tile.isEmpty()) continue;
             if (tile.equals("default")) {
                 if (!addedDefault) {
-                    tiles.addAll(Arrays.asList(defaultTileList.split(",")));
+                    if(SystemProperties.get("ro.rk.bt_enable", "true").equals("false"))
+                       tiles.addAll(Arrays.asList(defaultTileList.split(",")));
+                    else
+                       tiles.addAll(Arrays.asList(defaultTileList_bt.split(",")));
                     addedDefault = true;
                 }
             } else {

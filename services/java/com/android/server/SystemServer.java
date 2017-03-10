@@ -137,6 +137,10 @@ public final class SystemServer {
             "com.android.server.wifi.p2p.WifiP2pService";
     private static final String ETHERNET_SERVICE_CLASS =
             "com.android.server.ethernet.EthernetService";
+// add by blb 2015.3.3
+    private static final String PPPOE_SERVICE_CLASS =
+            "com.android.server.pppoe.PppoeService";
+// end add
     private static final String JOB_SCHEDULER_SERVICE_CLASS =
             "com.android.server.job.JobSchedulerService";
     private static final String PERSISTENT_DATA_BLOCK_PROP = "ro.frp.pst";
@@ -317,6 +321,10 @@ public final class SystemServer {
         mActivityManagerService.setSystemServiceManager(mSystemServiceManager);
         mActivityManagerService.setInstaller(installer);
 
+        // Display manager is needed to provide display metrics before package manager
+        // starts up.
+        mDisplayManagerService = mSystemServiceManager.startService(DisplayManagerService.class);
+
         // Power manager needs to be started early because other services need it.
         // Native daemons may be watching for it to be registered so it must be ready
         // to handle incoming binder calls immediately (including being able to verify
@@ -326,10 +334,6 @@ public final class SystemServer {
         // Now that the power manager has been started, let the activity manager
         // initialize power management features.
         mActivityManagerService.initPowerManagement();
-
-        // Display manager is needed to provide display metrics before package manager
-        // starts up.
-        mDisplayManagerService = mSystemServiceManager.startService(DisplayManagerService.class);
 
         // We need the default display before we can initialize the package manager.
         mSystemServiceManager.startBootPhase(SystemService.PHASE_WAIT_FOR_DEFAULT_DISPLAY);
@@ -450,6 +454,13 @@ public final class SystemServer {
                 Slog.e(TAG, "Failure starting Account Manager", e);
             }
 
+			try{
+				Slog.i(TAG, "Start SimStateChange Service");
+				startSimStateChangeService(context);
+			} catch (Throwable e) {
+				Slog.e(TAG, "Failure Start SimStatechange Service", e);
+			}
+			
             Slog.i(TAG, "Content Manager");
             contentService = ContentService.main(context,
                     mFactoryTestMode == FactoryTest.FACTORY_TEST_LOW_LEVEL);
@@ -570,7 +581,8 @@ public final class SystemServer {
         }
 
         try {
-            mPackageManagerService.performBootDexOpt();
+	    if(!"user".equals(Build.TYPE))// if user build,firmware has already dex,not need to do this
+            	mPackageManagerService.performBootDexOpt();
         } catch (Throwable e) {
             reportWtf("performing boot dexopt", e);
         }
@@ -680,7 +692,17 @@ public final class SystemServer {
                 if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_ETHERNET)) {
                     mSystemServiceManager.startService(ETHERNET_SERVICE_CLASS);
                 }
-
+//add by blb
+                String isCts = SystemProperties.get("net.pppoe.cts");
+                if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_PPPOE) && !"true".equals(isCts)) {
+                    try {
+                        Slog.i(TAG, "PppoeService");
+                        mSystemServiceManager.startService(PPPOE_SERVICE_CLASS);
+                    }catch (Throwable e) {
+                        reportWtf("start PppoeService error ", e);
+                    }
+                }
+//end blb
                 try {
                     Slog.i(TAG, "Connectivity Service");
                     connectivity = new ConnectivityService(
@@ -938,7 +960,17 @@ public final class SystemServer {
                 } catch (Throwable e) {
                     reportWtf("starting MediaRouterService", e);
                 }
-
+		
+		// $_rbox_$_modify_$_zhengyang: added 2012-02-20, for add DisplayDeviceManagementService
+            	try {
+               		Slog.i(TAG, "DisplayDeviceManagementService Service");
+                	ServiceManager.addService(
+                        "display_device_management",
+                        new DisplayDeviceManagementService(context));
+            	} catch (Throwable e) {
+                	Slog.e(TAG, "Failure starting DisplayDeviceManagementService Service", e);
+            	}
+                // $_rbox_$_modify_$ end
                 mSystemServiceManager.startService(TrustManagerService.class);
 
                 mSystemServiceManager.startService(FingerprintService.class);
@@ -1200,4 +1232,11 @@ public final class SystemServer {
         //Slog.d(TAG, "Starting service: " + intent);
         context.startServiceAsUser(intent, UserHandle.OWNER);
     }
+
+	static final void startSimStateChangeService(Context context) {
+		Intent intent = new Intent();
+		intent.setComponent(new ComponentName("com.android.contacts",
+			"com.android.contacts.SimStateChangedService"));
+		context.startServiceAsUser(intent, UserHandle.OWNER);
+	}
 }

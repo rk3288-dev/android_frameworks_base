@@ -748,8 +748,33 @@ public class KeyEvent extends InputEvent implements Parcelable {
     public static final int KEYCODE_TV_TIMER_PROGRAMMING = 258;
     /** Key code constant: Help key. */
     public static final int KEYCODE_HELP = 259;
+    /** Key code constant: Tv controlloer left mouse key */
+    public static final int KEYCODE_TV_KEYMOUSE_LEFT = 260;
+    /** Key code constant: Tv controlloer right mouse key*/
+    public static final int KEYCODE_TV_KEYMOUSE_RIGHT = 261;
+    /** Key code constant: Tv controlloer up mouse key*/
+    public static final int KEYCODE_TV_KEYMOUSE_UP = 262;
+    /** Key code constant: Tv controlloer down mouse key*/
+    public static final int KEYCODE_TV_KEYMOUSE_DOWN = 263;
+    /** Key code constant: Tv controlloer switch mouse key*/
+    public static final int KEYCODE_TV_KEYMOUSE_MODE_SWITCH = 264;
 
-    private static final int LAST_KEYCODE = KEYCODE_HELP;
+    /*$_rbox_$_modify_$_zhangwen_20140224: for support Tv Media controller*/
+//$_rbox_$_modify_$_begin
+    public static final int KEYCODE_TV_MEDIA_PLAY_PAUSE = 265;
+    public static final int KEYCODE_TV_MEDIA_STOP = 266;
+    public static final int KEYCODE_TV_MEDIA_NEXT = 267;
+    public static final int KEYCODE_TV_MEDIA_PREVIOUS = 268;
+    public static final int KEYCODE_TV_MEDIA_FAST_FORWARD = 269;
+    public static final int KEYCODE_TV_MEDIA_REWIND = 270;
+    public static final int KEYCODE_TV_MEDIA_MULT_FORWARD = 271;
+    public static final int KEYCODE_TV_MEDIA_MULT_BACKWARD = 272;
+    public static final int KEYCODE_TV_MEDIA_PLAY = 273;
+    public static final int KEYCODE_TV_MEDIA_PAUSE = 274;
+//$_rbox_$_modify_$ end
+
+    public static final int KEYCODE_FIREFLY_RECENT = 275;
+    private static final int LAST_KEYCODE           = KEYCODE_FIREFLY_RECENT;
 
     // NOTE: If you add a new keycode here you must also add it to:
     //  isSystem()

@@ -23,6 +23,9 @@ import com.android.internal.view.IInputMethodClient;
 import android.content.res.CompatibilityInfo;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
+//$_rbox_$_modify_$_chenxiao_begin,add for remotecontrol
+import android.hardware.ISensorManager;
+//$_rbox_$_modify_$_end
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.IRemoteCallback;
@@ -69,7 +72,11 @@ public class IWindowManagerImpl implements IWindowManager {
     }
 
     // ---- unused implementation of IWindowManager ----
+    public void dispatchMouse(float x, float y, int w, int h) {
+    }
 
+    public void dispatchMouseByCd(float x, float y) {
+    }
     @Override
     public void addAppToken(int arg0, IApplicationToken arg1, int arg2, int arg3, int arg4,
             boolean arg5, boolean arg6, int arg7, int arg8, boolean arg9, boolean arg10)
@@ -493,4 +500,27 @@ public class IWindowManagerImpl implements IWindowManager {
         // TODO Auto-generated method stub
         return null;
     }
+
+    //$_rbox_$_modify_$_chenxiao begin, add power shut down interface for statusbar
+	@Override
+    public void shutdown(){
+    }
+	//$_rbox_$_modify_$_chenxiao end
+
+    //$_rbox_$_modify_$_chenxiao_begin,add for remotecontrol
+   @Override
+   public ISensorManager getRemoteSensorManager(){
+   	return null;
+   }
+	
+   @Override
+   public void setJoyStick(int index, int[] postion, int[] size){
+   }
+   //$_rbox_$_modify_$_end
+   
+   //$_rockchip_$_modify_$_huangjc begin,add show/hide TitleBar interface for statusbar
+   @Override
+   public void changeTitleBar(boolean isShow){
+   }
+   //$_rockchip_$_modify_$_end
 }

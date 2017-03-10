@@ -19,6 +19,36 @@
 
 <resources xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+
+    <string name="app_type_all">所有程序</string>
+    <string name="app_type_system">系统</string>
+    <string name="app_type_office">办公</string>
+    <string name="app_type_game">游戏</string>
+    <string name="app_type_media">社交</string>
+    <string name="app_type_other">其他</string>
+    <string name="default_account_name">瑞芯微</string>
+
+    <string name="week_monday">周一</string>
+    <string name="week_tuesday">周二</string>
+    <string name="week_wednesday">周三</string>
+    <string name="week_thurday ">周四</string>
+    <string name="week_friday">周五</string>
+    <string name="week_saturday">周六</string>
+    <string name="week_sunday">周天</string>
+
+    <string-array name="custom_weekdays">
+        <item>日</item>
+        <item>一</item>
+        <item>二</item>
+        <item>三</item>
+        <item>四</item>
+        <item>五</item>
+        <item>六</item>
+    </string-array>
+    
+    <string name="drag_and_drop_ended">应用:%1$s 已添加到桌面! </string>
+    <string name="notification_center">通知中心</string>
+
     <string name="app_label" msgid="7164937344850004466">"系统界面"</string>
     <string name="status_bar_clear_all_button" msgid="7774721344716731603">"清除"</string>
     <string name="status_bar_recent_remove_item_title" msgid="6026395868129852968">"从列表中删除"</string>
@@ -258,6 +288,31 @@
     <string name="quick_settings_cast_detail_empty_text" msgid="311785821261640623">"没有可用设备"</string>
     <string name="quick_settings_brightness_dialog_title" msgid="8599674057673605368">"亮度"</string>
     <string name="quick_settings_brightness_dialog_auto_brightness_label" msgid="5064982743784071218">"自动"</string>
+	
+    <!-- $_rbox_$_modify_$_chenxiao begin,hide bar msg -->
+    <string name="hidebar_msg">"系统栏已经被隐藏\n您可以在屏幕上下边缘拖拉再次显示它。" </string>
+
+    <string name="cleartasks_msg">"已清空后台任务"</string>
+	
+    <!-- $_rbox_$_modify_$_chenxiao begin,usb unmount msg -->
+    <string name="dlg_confirm_unmount_title" product="nosdcard" msgid="3077285629197874055">"要卸载 USB 存储设备吗？"</string>
+    <string name="dlg_confirm_unmount_title" product="default" msgid="3634502237262534381">"要卸载此存储设备吗？"</string>
+    <string name="dlg_confirm_unmount_text" product="nosdcard" msgid="4322636662873269018">"如果卸载该 USB 存储设备，您当前使用的某些应用会停止运行，并且在您重新装载该设备前可能都无法使用。"</string>
+    <string name="dlg_confirm_unmount_text" product="default" msgid="6998379994779187692">"如果卸载该存储设备，您当前使用的某些应用会停止，并且在您重新装载该存储设备前，这些应用可能都无法使用。"</string>
+    <string name="dlg_error_unmount_title" product="nosdcard" msgid="4642742385125426529"></string>
+    <string name="dlg_error_unmount_title" product="default" msgid="4642742385125426529"></string>
+    <string name="dlg_error_unmount_text" product="nosdcard" msgid="4346280469528260684">"无法卸载 USB 存储设备，请稍后重试。"</string>
+    <string name="dlg_error_unmount_text" product="default" msgid="3073562815631781894">"无法卸载此存储设备，请稍后重试。"</string>
+    <string name="unmount_inform_text" product="nosdcard" msgid="7120241136790744265">"系统将会卸载 USB 存储设备。"</string>
+    <string name="unmount_inform_text" product="default" msgid="1904212716075458402">"系统将会卸载此存储设备。"</string>
+
+   
+     <!--screen shot-->
+    <string name="sdcard_unmount">内部存储正在使用中</string>
+    <string name="external_sd_unmount">SD卡未挂载</string>
+    <string name="usb_storage_unmount">USB存储未挂载</string>
+
+
     <string name="quick_settings_inversion_label" msgid="8790919884718619648">"反色"</string>
     <string name="quick_settings_color_space_label" msgid="853443689745584770">"颜色校正模式"</string>
     <string name="quick_settings_more_settings" msgid="326112621462813682">"更多设置"</string>
@@ -364,4 +419,22 @@
     <string name="quick_settings_reset_confirmation_title" msgid="748792586749897883">"要隐藏“<xliff:g id="TILE_LABEL">%1$s</xliff:g>”吗？"</string>
     <string name="quick_settings_reset_confirmation_message" msgid="2235970126803317374">"下次在设置中将其开启后，此快捷设置条目将会重新显示。"</string>
     <string name="quick_settings_reset_confirmation_button" msgid="2660339101868367515">"隐藏"</string>
+    <string name="popuwindow_close_app">关闭应用</string>
+    <string name="popuwindow_lock_app">解除锁定</string>
+    <string name="config_multi_dialog_title">请选择</string>
+    <string name="navbar_popupmenu_windowmode">窗口模式</string>
+    <string name="navbar_popupmenu_pad_mode">平板</string>
+    <string name="navbar_popupmenu_phone_mode">手机</string>
+    <string name="navbar_popupmenu_splite_mode">二分屏</string>
+    
+    <string name="comment_text">批注模式</string>
+    <string name="multishot_text">智能截图</string>
+    <string name="dynamic_text">录制动图</string>
+    <string name="fullshot_text">全屏截图</string>
+
+  <string name="restart_app_msg">应用正在重启...</string>
+    
+    <string name="power_sub_close">关闭系统</string>
+    <string name="power_sub_sleep">系统休眠</string>
+    <string name="power_sub_reboot">重启系统</string>
 </resources>
